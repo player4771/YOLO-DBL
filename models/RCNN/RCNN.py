@@ -9,7 +9,6 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 
 
-
 class RCNN_Resnet:
     def __init__(self):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -51,7 +50,7 @@ class RCNN_Resnet:
         for r in regions:
             x, y, w, h = r['rect']
             # 过滤掉太小或太大/太扁或太高的区域
-            if (r['rect'] in seen) or (r['size']<2000) or (w*h==0) or (w/h>2.5 or h/w>2.5):
+            if (r['rect'] in seen) or (w*h==0):
                 continue
 
             rects.append((x, y, w, h))
@@ -66,16 +65,14 @@ class RCNN_Resnet:
         :param image_tensor: 经过预处理的图像张量
         :return: 2048维的特征向量
         """
-        # 预处理步骤与VGG/ResNet通用
+        # 预处理
         preprocess = transforms.Compose([
             transforms.Resize((224, 224)),
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
         ])
 
-        input_tensor = preprocess(image_tensor).unsqueeze(0)
-
-        input_tensor = input_tensor.to(self.device)
+        input_tensor = preprocess(image_tensor).unsqueeze(0).to(self.device)
 
         # 关闭梯度计算以加速
         with torch.no_grad():
@@ -109,7 +106,7 @@ class RCNN_Resnet:
 
         plt.show()
 
-    def detect(self, image_path:str, threshold=0.5):
+    def detect(self, image_path:str, threshold=0.5, nms_threshold=0.5):
 
         # 加载并准备图像
         pil_image = Image.open(image_path).convert('RGB')
@@ -120,7 +117,7 @@ class RCNN_Resnet:
         candidate_rects = self.get_region_proposals(opencv_image)
         print(f"生成了 {len(candidate_rects)} 个候选区域。")
 
-        # 4. 对每个候选区域提取特征并进行“分类”
+        # 对每个候选区域提取特征并进行“分类”
         detections = []
         for i, rect in enumerate(candidate_rects):
             x, y, w, h = rect
@@ -145,11 +142,27 @@ class RCNN_Resnet:
                 print(f"[{i + 1}/{len(candidate_rects)}]: 检测到物体，分数{score.item():.2f}")
                 detections.append((rect, score.item()))
 
-        # 5. 可视化结果
+        # 将检测结果转换为 PyTorch Tensors
+        boxes_tensor = torch.tensor([list(rect) for rect, score in detections], dtype=torch.float32)
+        scores_tensor = torch.tensor([score for rect, score in detections], dtype=torch.float32)
+
+        # torchvision.ops.nms 需要 (x1, y1, x2, y2) 格式的边界框
+        # 我们的 rects 是 (x, y, w, h)，需要转换
+        boxes_tensor[:, 2] = boxes_tensor[:, 0] + boxes_tensor[:, 2]  # x2 = x1 + w
+        boxes_tensor[:, 3] = boxes_tensor[:, 1] + boxes_tensor[:, 3]  # y2 = y1 + h
+
+        # 设置 NMS 的 IoU 阈值
+        indices = torchvision.ops.nms(boxes_tensor, scores_tensor, nms_threshold)
+
+        # 根据 NMS 返回的索引，筛选出最终的检测结果
+        detections = [detections[i] for i in indices]
+        print(f"NMS 处理后，剩余 {len(detections)} 个检测结果。")
+        # --- NMS 处理结束 ---
+
+        # 可视化结果
         print("处理完成，可视化结果...")
         self.visualize_detection(pil_image, detections, threshold=threshold)
 
 
-# --- 主流程 ---
 if __name__ == '__main__':
-    RCNN_Resnet().detect('../../data/images/bus.jpg',0.5)
+    RCNN_Resnet().detect('../../data/images/bus.jpg',0.5, 0.3)
