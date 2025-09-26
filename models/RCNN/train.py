@@ -1,30 +1,26 @@
-# train.py
-
+import os
+import cv2
+import numpy as np
 import torch
 import torch.optim as optim
 import torch.nn as nn
 from torch.utils.data import DataLoader
-import os
-import sys
-import cv2
-import numpy as np
 from tqdm import tqdm
 import multiprocessing
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 
 from model import RCNN
-from utils import PreprocessedRCNNDataset, parse_yaml_config, selective_search, EarlyStopping
+from utils import PreprocessedRCNNDataset, selective_search, EarlyStopping, read_yaml
 
-
-# --- 预处理相关函数 ---
 def create_training_samples_vectorized(proposals, gt_boxes, gt_labels):
-    if len(gt_boxes) == 0: return np.array([]), proposals, np.array([]), np.array([])
+    if len(gt_boxes) == 0:
+        return np.array([]), proposals, np.array([]), np.array([])
     proposals_exp, gt_boxes_exp = np.expand_dims(proposals, axis=1), np.expand_dims(gt_boxes, axis=0)
-    xA, yA = np.maximum(proposals_exp[:, :, 0], gt_boxes_exp[:, :, 0]), np.maximum(proposals_exp[:, :, 1],
-                                                                                   gt_boxes_exp[:, :, 1])
-    xB, yB = np.minimum(proposals_exp[:, :, 2], gt_boxes_exp[:, :, 2]), np.minimum(proposals_exp[:, :, 3],
-                                                                                   gt_boxes_exp[:, :, 3])
+    xA, yA = (np.maximum(proposals_exp[:, :, 0], gt_boxes_exp[:, :, 0]),
+              np.maximum(proposals_exp[:, :, 1], gt_boxes_exp[:, :, 1]))
+    xB, yB = (np.minimum(proposals_exp[:, :, 2], gt_boxes_exp[:, :, 2]),
+              np.minimum(proposals_exp[:, :, 3], gt_boxes_exp[:, :, 3]))
     inter_area = np.maximum(0, xB - xA) * np.maximum(0, yB - yA)
     prop_areas, gt_areas = (proposals[:, 2] - proposals[:, 0]) * (proposals[:, 3] - proposals[:, 1]), (
                 gt_boxes[:, 2] - gt_boxes[:, 0]) * (gt_boxes[:, 3] - gt_boxes[:, 1])
@@ -32,8 +28,8 @@ def create_training_samples_vectorized(proposals, gt_boxes, gt_labels):
     iou_matrix = inter_area / (union_area + 1e-6)
     max_iou_per_proposal, best_gt_idx_per_proposal = np.max(iou_matrix, axis=1), np.argmax(iou_matrix, axis=1)
     IOU_THRESHOLD_POS, IOU_THRESHOLD_NEG = 0.5, 0.1
-    positive_indices, negative_indices = np.where(max_iou_per_proposal >= IOU_THRESHOLD_POS)[0], \
-    np.where(max_iou_per_proposal < IOU_THRESHOLD_NEG)[0]
+    positive_indices, negative_indices = (
+        np.where(max_iou_per_proposal >= IOU_THRESHOLD_POS)[0], np.where(max_iou_per_proposal < IOU_THRESHOLD_NEG)[0])
     positive_rois, negative_rois = proposals[positive_indices], proposals[negative_indices]
     if len(positive_indices) > 0:
         pos_labels = gt_labels[best_gt_idx_per_proposal[positive_indices]] + 1
@@ -50,12 +46,10 @@ def create_training_samples_vectorized(proposals, gt_boxes, gt_labels):
         pos_labels, pos_reg_targets = np.array([]), np.array([])
     return positive_rois, negative_rois, pos_labels, pos_reg_targets
 
-
-def worker_process(args):
+def worker(args):
     image_path, label_dir, output_dir = map(str, args)
     image_file = os.path.basename(image_path)
     image = cv2.imread(image_path)
-    if image is None: return
     annotation_path = os.path.join(label_dir, image_file.replace('.jpg', '.txt').replace('.png', '.txt'))
     gt_boxes, gt_labels = [], []
     if os.path.exists(annotation_path):
@@ -68,16 +62,16 @@ def worker_process(args):
                 gt_boxes.append([x1, y1, x2, y2])
                 gt_labels.append(int(class_id))
     proposals = np.array([[x, y, x + w, y + h] for x, y, w, h in selective_search(image)[:2000]])
-    pos_rois, neg_rois, pos_labels, pos_reg_targets = create_training_samples_vectorized(proposals, np.array(gt_boxes),
-                                                                                         np.array(gt_labels))
+    pos_rois, neg_rois, pos_labels, pos_reg_targets = create_training_samples_vectorized(
+        proposals, np.array(gt_boxes), np.array(gt_labels))
     save_data = {'image_path': image_path, 'positive_rois': pos_rois, 'negative_rois': neg_rois,
                  'positive_labels': pos_labels, 'regression_targets': pos_reg_targets}
     torch.save(save_data, os.path.join(output_dir, image_file.replace('.jpg', '.pt').replace('.png', '.pt')))
 
 
-def preprocess_data_if_needed(yaml_path):
+def preprocess(yaml_path):
     print("--- Checking for preprocessed data ---")
-    yaml_config = parse_yaml_config(yaml_path)
+    yaml_config = read_yaml(yaml_path)
     if not yaml_config: raise ValueError("YAML config could not be parsed.")
     yaml_dir = os.path.dirname(yaml_path)
     data_missing = any(not os.path.exists(os.path.join(yaml_dir, 'preprocessed', split)) or len(
@@ -99,7 +93,7 @@ def preprocess_data_if_needed(yaml_path):
         image_paths = [os.path.join(img_dir, f) for f in sorted(os.listdir(img_dir)) if f.endswith(('.jpg', '.png'))]
         task_args = [(path, label_dir, output_dir) for path in image_paths]
         with multiprocessing.Pool(processes=num_processes) as pool:
-            list(tqdm(pool.imap_unordered(worker_process, task_args), total=len(task_args), desc=f"Processing {split}"))
+            list(tqdm(pool.imap_unordered(worker, task_args), total=len(task_args), desc=f"Processing {split}"))
     print("--- Preprocessing finished! ---")
 
 
@@ -136,9 +130,8 @@ def validate(model, dataloader, device, cls_criterion, reg_criterion, num_classe
 
 def train(**kwargs):
     yaml_path = kwargs['yaml_path']
-    preprocess_data_if_needed(yaml_path)
-    yaml_config = parse_yaml_config(yaml_path)
-    if not yaml_config: sys.exit("YAML config could not be parsed.")
+    preprocess(yaml_path)
+    yaml_config = read_yaml(yaml_path)
     num_classes, yaml_dir = int(yaml_config['nc']), os.path.dirname(yaml_path)
     train_dir, val_dir = os.path.join(yaml_dir, 'preprocessed', 'train'), os.path.join(yaml_dir, 'preprocessed', 'val')
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

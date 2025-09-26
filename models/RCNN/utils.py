@@ -6,19 +6,10 @@ import yaml  # 导入yaml库
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 
-
-# --- 新增函数: 用于解析 data.yaml ---
-def parse_yaml_config(path):
-    """
-    解析 data.yaml 文件并返回配置字典。
-    """
-    with open(path, 'r', encoding='utf-8') as f:
-        try:
-            return yaml.safe_load(f)
-        except yaml.YAMLError as e:
-            print(f"Error parsing YAML file: {e}")
-            return None
-
+def read_yaml(yaml_path):
+    with open(yaml_path, 'r') as infile:
+        config = yaml.load(infile, Loader=yaml.FullLoader)
+    return config
 
 def get_iou(boxA, boxB):
     xA = max(boxA[0], boxB[0])
