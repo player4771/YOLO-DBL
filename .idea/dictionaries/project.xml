@@ -5,6 +5,7 @@
       <w>fastrcnn</w>
       <w>ious</w>
       <w>maxpool</w>
+      <w>preds</w>
       <w>rcnn</w>
       <w>thres</w>
       <w>xywh</w>

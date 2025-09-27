@@ -8,9 +8,6 @@ from torchvision import transforms
 from torchvision.ops import box_iou
 from tqdm import tqdm
 
-normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                 std=[0.229, 0.224, 0.225])
-
 
 def parse_data_cfg(path):
     """解析data.yaml文件"""
@@ -179,6 +176,7 @@ class CustomDataset(Dataset):
         new_img = np.zeros((self.cfg['img_size'], self.cfg['img_size'], 3), dtype=np.uint8)
         new_img[0:resized_h, 0:resized_w] = img_resized
         img_tensor = torch.from_numpy(new_img).permute(2, 0, 1).float() / 255.0
+        normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
         img_tensor = normalize(img_tensor)
 
         # 直接从内存中的缓存加载proposals和targets
@@ -258,3 +256,37 @@ def apply_regression(boxes, deltas):
     pred_y2 = pred_cy + pred_h / 2.0
 
     return torch.stack([pred_x1, pred_y1, pred_x2, pred_y2], dim=1)
+
+
+def convert_and_save_fp16(model_path, num_classes, output_path=None):
+    """
+    加载一个全精度(float32)模型,将其转换为半精度(float16),并保存.
+
+    Args:
+        model_path (str): 输入的 float32 .pth 文件路径.
+        num_classes (int): 模型的类别数 (包含背景).
+        output_path (str, optional): 输出的 float16 .pth 文件路径.
+                                     如果为 None,则在原文件名后添加 "_fp16".
+    """
+    if not output_path:
+        output_path = model_path.replace('.pth', '_fp16.pth')
+
+    print(f"\n--- Starting FP16 Conversion ---")
+    print(f"Loading float32 weights from: {model_path}")
+
+    # 导入模型定义,需要确保 model.py 在PYTHONPATH中
+    from model import FastRCNN
+
+    # 加载模型结构并置于评估模式
+    model = FastRCNN(num_classes=num_classes, pretrained=False)
+    model.load_state_dict(torch.load(model_path, map_location='cpu'))
+    model.eval()
+
+    # 将模型转换为半精度
+    print("Converting model to float16...")
+    model.half()
+
+    # 保存半精度的 state_dict
+    print(f"Saving float16 model to: {output_path}")
+    torch.save(model.state_dict(), output_path)
+    print("Conversion complete!")

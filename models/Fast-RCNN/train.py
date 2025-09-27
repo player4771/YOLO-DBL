@@ -7,7 +7,7 @@ import os
 import re
 
 from model import FastRCNN
-from utils import get_dataloaders, parse_data_cfg
+from utils import get_dataloaders, parse_data_cfg, convert_and_save_fp16
 
 
 def get_project_dir(base_project):
@@ -149,6 +149,12 @@ def train(**kwargs):
         scheduler.step()
 
     print(f"Training finished. Best model is at {best_model_path}")
+
+    if os.path.exists(best_model_path):
+        # 调用转换函数，自动保存一个_fp16.pth文件
+        convert_and_save_fp16(best_model_path, num_classes=cfg['num_classes'])
+    else:
+        print("No best model was saved. Skipping fp16 conversion.")
 
 
 if __name__ == '__main__':
