@@ -2,11 +2,12 @@ import re
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
+from pathlib import Path
 from torchvision.transforms import v2
 from torchvision.models import detection
 from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
-from torch import save, load, inference_mode, float32
+from torch import save, load, inference_mode, float32, stack, full_like, cat
 
 from src import Backbone, SSD300
 
@@ -150,41 +151,77 @@ def convert_to_coco_api(ds):
     return coco_ds
 
 @inference_mode()
-def evaluate(model, data_loader, device):
+def evaluate(model, data_loader, device, coco_gt=None, outfile=None):
     """使用 pycocotools 进行评估"""
     model.eval()
-    coco_gt = convert_to_coco_api(data_loader.dataset)
+    #每次评估都计算一次gt没有必要，可以作为一个固定参数传入
+    if coco_gt is None:
+        print('Warning: suggest to provide coco_gt as argument')
+        coco_gt = convert_to_coco_api(data_loader.dataset)
     coco_dt = []
 
-    pbar = tqdm(data_loader, desc="Eval")
-    for images, targets in pbar:
+    for images, targets in tqdm(data_loader, desc="Eval"):
         images = list(img.to(device) for img in images)
 
         outputs = model(images)
-        outputs = [{k: v.to('cpu') for k, v in t.items()} for t in outputs]
 
         for target, output in zip(targets, outputs):
+            # 获取单个图像的 image_id 和预测结果
             image_id = target['image_id'].item()
-            for box, score, label in zip(output['boxes'], output['scores'], output['labels']):
-                if score > 0.05:  # score a threshold
-                    coco_dt.append({
-                        'image_id': image_id,
-                        'category_id': label.item(),
-                        'bbox': [box[0].item(), box[1].item(),
-                                 (box[2] - box[0]).item(), (box[3] - box[1]).item()], #xywh
-                        'score': score.item(),
-                    })
+            scores = output['scores']
+
+            # 使用向量化操作进行分数过滤
+            keep = scores > 0.05
+            boxes = output['boxes'][keep]
+            labels = output['labels'][keep]
+            scores = scores[keep]
+
+            if boxes.numel() == 0:
+                continue
+
+            # 使用向量化操作将 boxes 从 xyxy 转换为 xywh
+            # boxes[:, 2] 代表所有框的 xmax, boxes[:, 0] 代表 xmin
+            boxes[:, 2] = boxes[:, 2] - boxes[:, 0]  # width = xmax - xmin
+            boxes[:, 3] = boxes[:, 3] - boxes[:, 1]  # height = ymax - ymin
+
+            # 将 image_id 扩展为与检测框数量匹配的张量
+            image_ids = full_like(labels, fill_value=image_id)
+
+            # 将当前图片的所有处理结果打包，并转移到 CPU
+            # torch.stack 会创建一个新的维度
+            processed_output = stack([
+                image_ids, labels, scores,
+                boxes[:, 0], boxes[:, 1], boxes[:, 2], boxes[:, 3]
+            ], dim=1)
+
+            # cat/stack 之后再 .cpu() 效率更高
+            coco_dt.append(processed_output.cpu())
 
     if not coco_dt:
         print("No predictions made, skipping evaluation.")
         return None
 
-    coco_dt = coco_gt.loadRes(coco_dt)
+    # 将列表中的所有 tensor 合并为一个
+    all_predictions = cat(coco_dt, dim=0).numpy()
+
+    coco_dt_final = []
+    for pred in all_predictions:
+        coco_dt_final.append({
+            'image_id': int(pred[0]),
+            'category_id': int(pred[1]),
+            'score': pred[2],
+            'bbox': [pred[3], pred[4], pred[5], pred[6]],
+        })
+
+    coco_dt = coco_gt.loadRes(coco_dt_final)
 
     coco_eval = COCOeval(coco_gt, coco_dt, 'bbox')
     coco_eval.evaluate()
     coco_eval.accumulate()
     coco_eval.summarize()
+
+    if outfile is not None:
+        write_coco_stat(coco_eval.stats, outfile)
 
     # 返回 coco_eval.stats[0]，即 AP @ IoU=0.50:0.95
     return coco_eval
@@ -197,12 +234,23 @@ def find_new_dir(name:str) -> str:
     else: #结尾没数字：添加序号2
         return name+'2'
 
-def coco_stats_to_csv(stats_list:list, outdir:str) -> None:
+def write_coco_stat(stat:list, outfile:str|Path) -> None:
     metric_names = [
         'mAP', 'AP50', 'AP75',
         'APs', 'APm', 'APl',
         'ARmax=1', 'ARmax=10', 'ARmax=100',
         'ARs', 'ARm', 'ARl'
     ]
-    df = pd.DataFrame(stats_list, columns=metric_names)
-    df.to_csv(outdir, index=False)
+
+    if not Path(outfile).exists():
+        Path(outfile).parent.mkdir(parents=True, exist_ok=True)
+        # Dataframe默认接受一个二维列表，第一维为列，内部每个列表为行
+        df = pd.DataFrame([stat], columns=metric_names)
+    else:
+        df = pd.read_csv(outfile)
+        if df.empty:
+            df = pd.DataFrame([stat], columns=metric_names)
+        else:
+            df = pd.concat([df, pd.DataFrame([stat])], ignore_index=True)
+
+    df.to_csv(outfile, index=False)

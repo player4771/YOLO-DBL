@@ -11,7 +11,7 @@ from torch.optim import lr_scheduler, AdamW
 from torch.amp import GradScaler, autocast
 
 from dataset import YoloDataset
-from utlis import create_model, SSDTransform, EarlyStopping, evaluate, find_new_dir, coco_stats_to_csv
+from utlis import create_model, SSDTransform, EarlyStopping, evaluate, find_new_dir, convert_to_coco_api
 
 
 def collate_fn(batch):
@@ -59,6 +59,7 @@ def train(**kwargs):
     val_img_path = data_path / cfg['val']
     train_label_path = train_img_path.parent / 'labels'
     val_label_path = val_img_path.parent / 'labels'
+    results_file = output_dir/'results.csv'
 
     # 创建 Dataset
     dataset_train = YoloDataset(
@@ -82,11 +83,9 @@ def train(**kwargs):
         num_workers=cfg['num_workers'], collate_fn=collate_fn
     )
 
-    # 创建模型
     model = create_model(backbone='vgg16', num_classes=num_classes)
     model.to(cfg['device'])
 
-    # 定义优化器和学习率调度器
     scaler = GradScaler()
     params = [p for p in model.parameters() if p.requires_grad]
     #optimizer = SGD(params, lr=cfg['lr'], momentum=0.9, weight_decay=cfg['weight_decay'])
@@ -96,14 +95,14 @@ def train(**kwargs):
     early_stopper = EarlyStopping(patience=cfg['patience'], verbose=True, path=str(output_dir/'best.pth'))
     warmup_iters = cfg['warmup']*len(train_loader) if cfg['warmup'] else 0
     warmup_scheduler = lr_scheduler.LinearLR(optimizer, start_factor=1e-3, total_iters=warmup_iters)
+    coco_gt = convert_to_coco_api(val_loader.dataset)
 
-    # 开始训练
-    stats = [] #评估结果列表
+
     for epoch in range(cfg['epochs']):
         model.train()
 
         pbar = tqdm(train_loader, desc=f"Train[{epoch}]")
-        for i, (images, targets) in enumerate(pbar):
+        for (images, targets) in pbar:
             images = list(image.to(cfg['device'], non_blocking=True) for image in images)
             targets = [{k: v.to(cfg['device'], non_blocking=True) for k, v in t.items()} for t in targets]
 
@@ -123,17 +122,15 @@ def train(**kwargs):
         if not cfg['warmup'] or epoch >= cfg['warmup']:
             scheduler.step()
 
-        coco_eval = evaluate(model, val_loader, cfg['device'])
+        coco_eval = evaluate(model, val_loader, cfg['device'], coco_gt=coco_gt, outfile=results_file)
         mAP = coco_eval.stats[0] if coco_eval else 0.0
-        stats.append(coco_eval.stats)
 
         early_stopper.update(mAP, model)
         if early_stopper.early_stop:
             print(f'Early stopping with mAP {mAP:.6f}')
             break
 
-    coco_stats_to_csv(stats, str(output_dir/'results.csv'))
-    print(f"Training finished, Results saved to {str(output_dir/'results.csv')}.")
+    print(f"Training finished, Results saved to {results_file}.")
 
 
 if __name__ == '__main__':
