@@ -1,3 +1,9 @@
 /models/RCNN/runs/
 /.idea/deployment.xml
 /models/Fast-RCNN/runs/
+/models/SSD/runs/
+/models/Faster-RCNN_VOC/runs/
+/models/SSD_VOC/runs/
+/models/SSD/checkpoints/
+/models/Faster-RCNN_VOC/
+/models/SSD_VOC/
