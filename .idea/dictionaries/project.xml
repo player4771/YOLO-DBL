@@ -11,8 +11,10 @@
       <w>iscrowd</w>
       <w>maxpool</w>
       <w>mobilenetv</w>
+      <w>outdir</w>
       <w>preds</w>
       <w>rcnn</w>
+      <w>rmax</w>
       <w>thres</w>
       <w>xmax</w>
       <w>xmin</w>

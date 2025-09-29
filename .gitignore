@@ -2,9 +2,7 @@
 /.idea/deployment.xml
 /models/Fast-RCNN/runs/
 /models/SSD/runs/
-/models/Faster-RCNN_VOC/runs/
-/models/SSD_VOC/runs/
 /models/SSD/checkpoints/
 /models/Faster-RCNN_VOC/
 /models/SSD_VOC/
-/models/Faster-RCNN_VOC/backbone/
+/models/SSD/src/nvidia_ssdpyt_amp_200703.pt

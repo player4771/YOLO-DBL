@@ -1,10 +1,40 @@
 import re
 import numpy as np
+import pandas as pd
 from tqdm import tqdm
+from torchvision.transforms import v2
+from torchvision.models import detection
 from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
-from torch import save, inference_mode, float32
-from torchvision.transforms import v2
+from torch import save, load, inference_mode, float32
+
+from src import Backbone, SSD300
+
+def create_model(backbone:str, num_classes:int):# -> model
+    if backbone == "vgg16":
+        model = detection.ssd300_vgg16(weights=detection.SSD300_VGG16_Weights.COCO_V1)
+        # 替换分类头以匹配类别数
+        model.head.classification_head = detection.ssd.SSDClassificationHead(
+            in_channels=[512, 1024, 512, 256, 256, 256],  # For VGG16 backbone in SSD300
+            num_anchors=[4, 6, 6, 6, 4, 4],  # Default anchors for SSD300
+            num_classes=num_classes,
+        )
+    elif backbone == "resnet50":
+        model = SSD300(backbone=Backbone(), num_classes=num_classes)
+        pre_model_dict = load("./nvidia_ssdpyt_amp_200703.pt", map_location='cpu')
+        pre_weights_dict = pre_model_dict["model"]
+        # 删除类别预测器权重，注意，回归预测器的权重可以重用，因为不涉及num_classes
+        del_conf_loc_dict = {}
+        for k, v in pre_weights_dict.items():
+            split_key = k.split(".")
+            if "conf" in split_key:
+                continue
+            del_conf_loc_dict.update({k: v})
+        model.load_state_dict(del_conf_loc_dict, strict=False)
+    else:
+        raise "Invalid backbone, required 'vgg16' or 'resnet50'."
+
+    return model
 
 class SSDTransform:
     def __init__(self, is_train=True):
@@ -78,7 +108,7 @@ class EarlyStopping:
     def save_checkpoint(self, val_metric, model):
         """当验证指标改善时，保存模型。"""
         if self.verbose:
-            self.trace_func(f'val_metric improved: {self.val_metric_min:.6f} --> {val_metric:.6f}.  Saving model ...')
+            self.trace_func(f'Val metric improved: {self.val_metric_min:.6f} --> {val_metric:.6f}.  Saving model ...')
         save(model.state_dict(), self.path)
         self.val_metric_min = val_metric
 
@@ -166,3 +196,13 @@ def find_new_dir(name:str) -> str:
         return name[:num.start()]+str(int(num.group(0))+1)
     else: #结尾没数字：添加序号2
         return name+'2'
+
+def coco_stats_to_csv(stats_list:list, outdir:str) -> None:
+    metric_names = [
+        'mAP', 'AP50', 'AP75',
+        'APs', 'APm', 'APl',
+        'ARmax=1', 'ARmax=10', 'ARmax=100',
+        'ARs', 'ARm', 'ARl'
+    ]
+    df = pd.DataFrame(stats_list, columns=metric_names)
+    df.to_csv(outdir, index=False)

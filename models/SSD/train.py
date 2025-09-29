@@ -7,13 +7,11 @@ set_dir('./')
 from torch.backends import cudnn
 cudnn.benchmark=True
 from torch.utils.data import DataLoader
-from torch.optim import SGD, lr_scheduler
+from torch.optim import lr_scheduler, AdamW
 from torch.amp import GradScaler, autocast
-from torchvision.models.detection.ssd import SSDClassificationHead
-from torchvision.models.detection import ssd300_vgg16, SSD300_VGG16_Weights
 
 from dataset import YoloDataset
-from utlis import SSDTransform, EarlyStopping, evaluate, find_new_dir
+from utlis import create_model, SSDTransform, EarlyStopping, evaluate, find_new_dir, coco_stats_to_csv
 
 
 def collate_fn(batch):
@@ -24,16 +22,17 @@ def collate_fn(batch):
 
 
 def train(**kwargs):
-    cfg={
+    cfg={ #default args
         'data':None, #不可缺省
         'project':'./runs',
         'name':'train',
         'epochs':20,
         'lr':1e-3,
+        'lf':1e-2,
         'batch_size':8,
         'num_workers':8,
         'weight_decay':1e-5,
-        'patience':10,
+        'patience':5,
         'device':'cuda',
         'warmup':None #预热epoch数，None为禁用
     }
@@ -83,26 +82,17 @@ def train(**kwargs):
         num_workers=cfg['num_workers'], collate_fn=collate_fn
     )
 
-    # 加载预训练模型
-    model = ssd300_vgg16(weights=SSD300_VGG16_Weights.COCO_V1)
-
-    # 获取分类头的输入通道数
-    in_channels = [512, 1024, 512, 256, 256, 256]  # For VGG16 backbone in SSD300
-
-    # 替换分类头以匹配类别数
-    model.head.classification_head = SSDClassificationHead(
-        in_channels=in_channels,
-        num_anchors=[4, 6, 6, 6, 4, 4],  # Default anchors for SSD300
-        num_classes=num_classes,
-    )
-
+    # 创建模型
+    model = create_model(backbone='vgg16', num_classes=num_classes)
     model.to(cfg['device'])
 
     # 定义优化器和学习率调度器
     scaler = GradScaler()
     params = [p for p in model.parameters() if p.requires_grad]
-    optimizer = SGD(params, lr=cfg['lr'], momentum=0.9, weight_decay=cfg['weight_decay'])
-    scheduler = lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
+    #optimizer = SGD(params, lr=cfg['lr'], momentum=0.9, weight_decay=cfg['weight_decay'])
+    optimizer = AdamW(params, lr=cfg['lr'], weight_decay=cfg['weight_decay'])
+    #scheduler = lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
+    scheduler = lr_scheduler.CosineAnnealingLR(optimizer, T_max=cfg['epochs'], eta_min=cfg['lr'] * cfg['lf'])
     early_stopper = EarlyStopping(patience=cfg['patience'], verbose=True, path=str(output_dir/'best.pth'))
     warmup_iters = cfg['warmup']*len(train_loader) if cfg['warmup'] else 0
     warmup_scheduler = lr_scheduler.LinearLR(optimizer, start_factor=1e-3, total_iters=warmup_iters)
@@ -135,20 +125,23 @@ def train(**kwargs):
 
         coco_eval = evaluate(model, val_loader, cfg['device'])
         mAP = coco_eval.stats[0] if coco_eval else 0.0
+        stats.append(coco_eval.stats)
 
         early_stopper.update(mAP, model)
         if early_stopper.early_stop:
             print(f'Early stopping with mAP {mAP:.6f}')
             break
 
-    print("Training finished.")
+    coco_stats_to_csv(stats, str(output_dir/'results.csv'))
+    print(f"Training finished, Results saved to {str(output_dir/'results.csv')}.")
 
 
 if __name__ == '__main__':
     train(
         data="E:/Projects/Datasets/tea_leaf_diseases/data_abs.yaml",
         project="./runs",
-        epochs=20,
+        epochs=100,
+        patience=10,
         lr=1e-3,
         warmup=1,
         num_workers=4
