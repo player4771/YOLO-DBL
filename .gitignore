@@ -7,3 +7,4 @@
 /models/SSD/checkpoints/
 /models/Faster-RCNN_VOC/
 /models/SSD_VOC/
+/models/Faster-RCNN_VOC/backbone/
