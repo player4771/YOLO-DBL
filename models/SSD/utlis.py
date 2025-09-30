@@ -20,9 +20,9 @@ def create_model(backbone:str, num_classes:int):# -> model
             num_anchors=[4, 6, 6, 6, 4, 4],  # Default anchors for SSD300
             num_classes=num_classes,
         )
-    elif backbone == "resnet50":
+    elif backbone == "resnet50": #暂时无法实现
         model = SSD300(backbone=Backbone(), num_classes=num_classes)
-        pre_model_dict = load("./nvidia_ssdpyt_amp_200703.pt", map_location='cpu')
+        pre_model_dict = load("./src/nvidia_ssdpyt_amp_200703.pt", map_location='cpu')
         pre_weights_dict = pre_model_dict["model"]
         # 删除类别预测器权重，注意，回归预测器的权重可以重用，因为不涉及num_classes
         del_conf_loc_dict = {}
@@ -50,13 +50,15 @@ class SSDTransform:
                 #v2.RandomIoUCrop(),这个有bug
                 # 随机水平翻转
                 v2.RandomHorizontalFlip(p=0.5),
+                v2.Resize((300,300)),
                 # 转换为张量并归一化到 [0, 1]
-                v2.ToImage(), #不加会报错
+                v2.ToImage(), #与ToDtype配合使用，不加会报错
                 v2.ToDtype(float32, scale=True),
             ])
         else:
             # 验证集通常只做最基础的转换
             self.transform = v2.Compose([
+                v2.Resize((300,300)),
                 v2.ToImage(),
                 v2.ToDtype(float32, scale=True),
             ])
@@ -251,6 +253,6 @@ def write_coco_stat(stat:list, outfile:str|Path) -> None:
         if df.empty:
             df = pd.DataFrame([stat], columns=metric_names)
         else:
-            df = pd.concat([df, pd.DataFrame([stat])], ignore_index=True)
+            df = pd.concat([df, pd.DataFrame([stat], columns=metric_names)], ignore_index=True)
 
     df.to_csv(outfile, index=False)

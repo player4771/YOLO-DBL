@@ -2,6 +2,7 @@ import yaml
 from tqdm import tqdm
 from pathlib import Path
 
+from torch import stack
 from torch.hub import set_dir
 set_dir('./')
 from torch.backends import cudnn
@@ -23,6 +24,7 @@ def collate_fn(batch):
 
 def train(**kwargs):
     cfg={ #default args
+        'backbone':'vgg16',
         'data':None, #不可缺省
         'project':'./runs',
         'name':'train',
@@ -76,14 +78,14 @@ def train(**kwargs):
     # 创建 DataLoader
     train_loader = DataLoader(
         dataset_train, batch_size=cfg['batch_size'], shuffle=True, pin_memory=True,
-        num_workers=cfg['num_workers'], collate_fn=collate_fn
+        num_workers=cfg['num_workers'], collate_fn=collate_fn, persistent_workers=True
     )
     val_loader = DataLoader(
         dataset_val, batch_size=cfg['batch_size'], shuffle=False, pin_memory=True,
-        num_workers=cfg['num_workers'], collate_fn=collate_fn
+        num_workers=cfg['num_workers'], collate_fn=collate_fn, persistent_workers=True
     )
 
-    model = create_model(backbone='vgg16', num_classes=num_classes)
+    model = create_model(backbone=cfg['backbone'], num_classes=num_classes)
     model.to(cfg['device'])
 
     scaler = GradScaler()
@@ -103,7 +105,8 @@ def train(**kwargs):
 
         pbar = tqdm(train_loader, desc=f"Train[{epoch}]")
         for (images, targets) in pbar:
-            images = list(image.to(cfg['device'], non_blocking=True) for image in images)
+            #images = list(image.to(cfg['device'], non_blocking=True) for image in images)
+            images = stack(images, dim=0).to(device=cfg['device'], non_blocking=True)
             targets = [{k: v.to(cfg['device'], non_blocking=True) for k, v in t.items()} for t in targets]
 
             with autocast(device_type=cfg['device']):
@@ -135,11 +138,13 @@ def train(**kwargs):
 
 if __name__ == '__main__':
     train(
+        backbone='vgg16',
         data="E:/Projects/Datasets/tea_leaf_diseases/data_abs.yaml",
         project="./runs",
         epochs=100,
         patience=10,
         lr=1e-3,
         warmup=1,
-        num_workers=4
+        batch_size=16,
+        num_workers=8
     )
