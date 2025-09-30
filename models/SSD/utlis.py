@@ -8,12 +8,14 @@ from torchvision.models import detection
 from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
 from torch import save, load, inference_mode, float32, stack, full_like, cat
+from torch.hub import set_dir
+set_dir('./') #修改缓存路径
 
 from src import Backbone, SSD300
 
-def create_model(backbone:str, num_classes:int):# -> model
+def create_model(backbone:str='vgg16', weights:str=None, num_classes:int=21):# -> model
     if backbone == "vgg16":
-        model = detection.ssd300_vgg16(weights=detection.SSD300_VGG16_Weights.COCO_V1)
+        model = detection.ssd300_vgg16(weights=weights if weights else detection.SSD300_VGG16_Weights.COCO_V1)
         # 替换分类头以匹配类别数
         model.head.classification_head = detection.ssd.SSDClassificationHead(
             in_channels=[512, 1024, 512, 256, 256, 256],  # For VGG16 backbone in SSD300
@@ -22,7 +24,7 @@ def create_model(backbone:str, num_classes:int):# -> model
         )
     elif backbone == "resnet50": #暂时无法实现
         model = SSD300(backbone=Backbone(), num_classes=num_classes)
-        pre_model_dict = load("./src/nvidia_ssdpyt_amp_200703.pt", map_location='cpu')
+        pre_model_dict = load(weights if weights else "./src/nvidia_ssdpyt_amp_200703.pt", map_location='cpu')
         pre_weights_dict = pre_model_dict["model"]
         # 删除类别预测器权重，注意，回归预测器的权重可以重用，因为不涉及num_classes
         del_conf_loc_dict = {}
@@ -229,12 +231,20 @@ def evaluate(model, data_loader, device, coco_gt=None, outfile=None):
     return coco_eval
 
 
-def find_new_dir(name:str) -> str:
-    num = re.search(r'\d+$', name)
-    if num: #结尾有数字：序号+1
-        return name[:num.start()]+str(int(num.group(0))+1)
-    else: #结尾没数字：添加序号2
-        return name+'2'
+def find_new_dir(dir_: str | Path) -> str | Path: #给定默认路径，寻找下一个未被占用的路径
+    ret = str(dir_)
+    while Path(ret).exists():
+        num = re.search(r'\d+$', ret)
+        if num: #结尾有数字：序号+1
+            ret = ret[:num.start()] + str(int(num.group(0)) + 1)
+        else: #结尾没数字：添加序号2
+            ret = ret + '2'
+    if isinstance(dir_, str): #返回类型与传入类型保持相同，用起来方便
+        return str(ret)
+    elif isinstance(dir_, Path):
+        return Path(ret)
+    else:
+        raise TypeError('dir_ = str/Path')
 
 def write_coco_stat(stat:list, outfile:str|Path) -> None:
     metric_names = [

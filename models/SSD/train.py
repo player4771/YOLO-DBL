@@ -3,8 +3,6 @@ from tqdm import tqdm
 from pathlib import Path
 
 from torch import stack
-from torch.hub import set_dir
-set_dir('./')
 from torch.backends import cudnn
 cudnn.benchmark=True
 from torch.utils.data import DataLoader
@@ -45,11 +43,7 @@ def train(**kwargs):
         cfg.update(yaml.load(infile, Loader=yaml.FullLoader))
 
     num_classes = cfg['nc'] + 1 # +1 是因为 SSD 需要一个背景类
-    output_dir = Path(cfg['project'], cfg['name'])
-    while output_dir.exists(): #若路径已存在，则加序号(或序号增加)，寻找新文件夹
-        cfg['name'] = find_new_dir(cfg['name'])
-        output_dir = Path(cfg['project'], cfg['name'])
-
+    output_dir = find_new_dir(Path(cfg['project'], cfg['name']))
     output_dir.mkdir(parents=True, exist_ok=True)
 
     with open(output_dir/'args.yaml', 'w') as outfile:
