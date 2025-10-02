@@ -250,7 +250,7 @@ def write_coco_stat(stat:list, outfile:str|Path) -> None:
     metric_names = [
         'mAP', 'AP50', 'AP75',
         'APs', 'APm', 'APl',
-        'ARmax=1', 'ARmax=10', 'ARmax=100',
+        'AR1', 'AR10', 'AR100',
         'ARs', 'ARm', 'ARl'
     ]
 

@@ -7,7 +7,7 @@ from PIL import Image
 from pathlib import Path
 from torchvision.transforms import v2
 
-from utlis import create_model, find_new_dir
+from utils import create_model, find_new_dir
 
 
 def detect(**kwargs):
