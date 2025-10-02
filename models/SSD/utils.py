@@ -208,14 +208,12 @@ def evaluate(model, data_loader, device, coco_gt=None, outfile=None):
     # 将列表中的所有 tensor 合并为一个
     all_predictions = cat(coco_dt, dim=0).numpy()
 
-    coco_dt_final = []
-    for pred in all_predictions:
-        coco_dt_final.append({
+    coco_dt_final = [{
             'image_id': int(pred[0]),
             'category_id': int(pred[1]),
             'score': pred[2],
             'bbox': [pred[3], pred[4], pred[5], pred[6]],
-        })
+        } for pred in all_predictions]
 
     coco_dt = coco_gt.loadRes(coco_dt_final)
 

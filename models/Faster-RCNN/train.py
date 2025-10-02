@@ -40,9 +40,10 @@ def train(**kwargs):
 
     num_classes = cfg['nc'] + 1
     output_dir = find_new_dir(Path(cfg['project'], cfg['name']))
+    print(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    with open(output_dir / 'args.yaml', 'w') as outfile:
+    with open(output_dir/'args.yaml', 'w') as outfile:
         yaml.dump(cfg, outfile)
 
     data_path = Path(cfg['data']).parent
@@ -55,12 +56,12 @@ def train(**kwargs):
     dataset_train = YoloDataset(
         img_dir=str(train_img_path),
         label_dir=str(train_label_path),
-        transform=AlbumentationsTransform(is_train=True, img_size=cfg['img_size'])
+        transform=AlbumentationsTransform(is_train=True, size=cfg['img_size'])
     )
     dataset_val = YoloDataset(
         img_dir=str(val_img_path),
         label_dir=str(val_label_path),
-        transform=AlbumentationsTransform(is_train=False, img_size=cfg['img_size'])
+        transform=AlbumentationsTransform(is_train=False, size=cfg['img_size'])
     )
 
     train_loader = DataLoader(
@@ -131,5 +132,5 @@ if __name__ == '__main__':
         warmup=1,
         batch_size=8,
         num_workers=4,
-        img_size=300,
+        img_size=640,
     )

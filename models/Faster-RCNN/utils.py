@@ -1,3 +1,4 @@
+import re
 import cv2
 import numpy as np
 import pandas as pd
@@ -50,22 +51,20 @@ class EarlyStopping:
         self.val_loss_min = score
 
 
-def find_new_dir(parent_dir='.', name='train'):
-    """
-    在 parent_dir 下创建一个新的、不冲突的目录，如 train, train2, train3...
-    """
-    parent_dir = Path(parent_dir)
-    base_path = parent_dir / name
-    if not base_path.exists():
-        return base_path
-
-    i = 2
-    while True:
-        new_path = parent_dir / f"{name}{i}"
-        if not new_path.exists():
-            return new_path
-        i += 1
-
+def find_new_dir(dir_: str | Path) -> str | Path: #给定默认路径，寻找下一个未被占用的路径
+    ret = str(dir_)
+    while Path(ret).exists():
+        num = re.search(r'\d+$', ret)
+        if num: #结尾有数字：序号+1
+            ret = ret[:num.start()] + str(int(num.group(0)) + 1)
+        else: #结尾没数字：添加序号2
+            ret = ret + '2'
+    if isinstance(dir_, str): #返回类型与传入类型保持相同，用起来方便
+        return str(ret)
+    elif isinstance(dir_, Path):
+        return Path(ret)
+    else:
+        raise TypeError('dir_ = str/Path')
 
 def convert_to_coco_api(ds):
     coco_ds = COCO()
@@ -134,8 +133,6 @@ def evaluate(model, data_loader, device, outfile=None):
 
     # 使用一个字典来存储所有图片的预测结果，键是 image_id
     results_dict = {}
-    cpu_device = torch.device("cpu")
-
     pbar = tqdm(data_loader, desc="Evaluating")
     for images, targets in pbar:
         images = list(img.to(device, non_blocking=True) for img in images)
@@ -145,7 +142,7 @@ def evaluate(model, data_loader, device, outfile=None):
             torch.cuda.synchronize()
 
         outputs = model(images)
-        outputs = [{k: v.to(cpu_device) for k, v in t.items()} for t in outputs]
+        outputs = [{k: v.to('cpu') for k, v in t.items()} for t in outputs]
 
         # 将这个批次的预测结果更新到总的 results_dict 中
         batch_res = {target["image_id"].item(): output for target, output in zip(targets, outputs)}
@@ -218,10 +215,10 @@ def write_coco_stat(stat:list, outfile:str|Path) -> None:
     df.to_csv(outfile, index=False)
 
 class AlbumentationsTransform:
-    def __init__(self, is_train=True, img_size=640):
+    def __init__(self, is_train=True, size=640):
         if is_train:
             self.transform = A.Compose([
-                A.Resize(height=img_size, width=img_size, p=1),
+                A.Resize(height=size, width=size, p=1),
                 A.HorizontalFlip(p=0.5),
                 A.RandomBrightnessContrast(p=0.2),
                 A.ColorJitter(p=0.2),
@@ -230,7 +227,7 @@ class AlbumentationsTransform:
             ], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['class_labels']))
         else:
             self.transform = A.Compose([
-                A.Resize(height=img_size, width=img_size, p=1),
+                A.Resize(height=size, width=size, p=1),
                 A.Normalize(mean=(0.485, 0.456, 0.40), std=(0.229, 0.224, 0.225)),
                 ToTensorV2(),
             ], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['class_labels']))
