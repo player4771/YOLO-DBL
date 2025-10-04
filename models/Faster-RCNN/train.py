@@ -1,11 +1,9 @@
 import yaml
+import torch
 from tqdm import tqdm
 from pathlib import Path
-from torch.backends import cudnn
-cudnn.benchmark = True
-from torch.utils.data import DataLoader
-from torch.optim import lr_scheduler, AdamW
-from torch.amp import GradScaler, autocast
+torch.backends.cudnn.benchmark = True
+torch.backends.cuda.matmul.allow_tf32 = True
 
 from utils import find_new_dir, EarlyStopping, YoloDataset, AlbumentationsTransform, create_model, evaluate
 
@@ -40,7 +38,6 @@ def train(**kwargs):
 
     num_classes = cfg['nc'] + 1
     output_dir = find_new_dir(Path(cfg['project'], cfg['name']))
-    print(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     with open(output_dir/'args.yaml', 'w') as outfile:
@@ -54,35 +51,33 @@ def train(**kwargs):
     results_file = output_dir / 'results.csv'
 
     dataset_train = YoloDataset(
-        img_dir=str(train_img_path),
-        label_dir=str(train_label_path),
+        img_dir=str(train_img_path), label_dir=str(train_label_path),
         transform=AlbumentationsTransform(is_train=True, size=cfg['img_size'])
     )
     dataset_val = YoloDataset(
-        img_dir=str(val_img_path),
-        label_dir=str(val_label_path),
+        img_dir=str(val_img_path), label_dir=str(val_label_path),
         transform=AlbumentationsTransform(is_train=False, size=cfg['img_size'])
     )
 
-    train_loader = DataLoader(
+    train_loader = torch.utils.data.DataLoader(
         dataset_train, batch_size=cfg['batch_size'], shuffle=True, pin_memory=True,
         num_workers=cfg['num_workers'], collate_fn=collate_fn, persistent_workers=True
     )
-    val_loader = DataLoader(
+    val_loader = torch.utils.data.DataLoader(
         dataset_val, batch_size=cfg['batch_size'], shuffle=False, pin_memory=True,
         num_workers=cfg['num_workers'], collate_fn=collate_fn, persistent_workers=True
     )
 
-    model = create_model(backbone_name=cfg['backbone'], num_classes=num_classes)
+    model = create_model(backbone=cfg['backbone'], num_classes=num_classes)
     model.to(cfg['device'])
 
-    scaler = GradScaler()
+    scaler = torch.amp.GradScaler()
     params = [p for p in model.parameters() if p.requires_grad]
-    optimizer = AdamW(params, lr=cfg['lr'], weight_decay=cfg['weight_decay'])
-    scheduler = lr_scheduler.CosineAnnealingLR(optimizer, T_max=cfg['epochs'], eta_min=cfg['lr'] * cfg['lf'])
-    early_stopper = EarlyStopping(patience=cfg['patience'], verbose=True, path=str(output_dir/'best.pth'))
+    optimizer = torch.optim.AdamW(params, lr=cfg['lr'], weight_decay=cfg['weight_decay'])
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=cfg['epochs'], eta_min=cfg['lr'] * cfg['lf'])
+    early_stopper = EarlyStopping(patience=cfg['patience'], verbose=True, delta=0.001, path=str(output_dir/'best.pth'))
     warmup_iters = cfg['warmup'] * len(train_loader) if cfg['warmup'] else 0
-    warmup_scheduler = lr_scheduler.LinearLR(optimizer, start_factor=1e-3, total_iters=warmup_iters)
+    warmup_scheduler = torch.optim.lr_scheduler.LinearLR(optimizer, start_factor=1e-3, total_iters=warmup_iters)
 
     for epoch in range(cfg['epochs']):
         model.train()
@@ -92,19 +87,18 @@ def train(**kwargs):
             images = [image.to(cfg['device'], non_blocking=True) for image in images]
             targets =[{k: v.to(cfg['device'], non_blocking=True) for k, v in t.items()} for t in targets]
 
-            with autocast(device_type=cfg['device']):
-                # Faster R-CNN 在训练模式下直接返回 loss dict
+            with torch.amp.autocast(device_type=cfg['device']):
                 loss_dict = model(images, targets)
                 losses = sum(loss for loss in loss_dict.values())
 
-            optimizer.zero_grad()
+            optimizer.zero_grad(set_to_none=True)
             scaler.scale(losses).backward()
             scaler.step(optimizer)
             scaler.update()
 
             warmup_scheduler.step()
 
-            pbar.set_postfix(loss=losses.item())
+            pbar.set_postfix(lr=scheduler.get_last_lr()[0], loss=losses.item())
 
         if not cfg['warmup'] or epoch >= cfg['warmup']:
             scheduler.step()
@@ -132,5 +126,5 @@ if __name__ == '__main__':
         warmup=1,
         batch_size=8,
         num_workers=4,
-        img_size=640,
+        img_size=300,
     )

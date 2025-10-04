@@ -134,17 +134,17 @@ def convert_to_coco_api(ds):
         }
         dataset['images'].append(img_dict)
 
-        boxes = targets["boxes"]
-        labels = targets["labels"]
+        boxes, labels = targets["boxes"], targets["labels"]
         for i in range(boxes.shape[0]):
             box = boxes[i].tolist()
             label = labels[i].item()
             categories.add(label)
-            ann = {'image_id': image_id,
-                   'bbox': [box[0], box[1], box[2] - box[0], box[3] - box[1]],
-                   'category_id': label,
-                   'id': ann_id,
-                   'iscrowd': 0
+            ann = {
+                'image_id': image_id,
+                'bbox': [box[0], box[1], box[2] - box[0], box[3] - box[1]],
+                'category_id': label,
+                'id': ann_id,
+                'iscrowd': 0
             }
             ann['area'] = ann['bbox'][2] * ann['bbox'][3]
             dataset['annotations'].append(ann)

@@ -1,11 +1,10 @@
 
+import torch
 from PIL import Image
 from pathlib import Path
-from torch.utils.data import Dataset
-from torch import float32, int64, zeros, tensor, as_tensor
 from torchvision.tv_tensors import BoundingBoxes
 
-class YoloDataset(Dataset):
+class YoloDataset(torch.utils.data.Dataset):
     """
     用于读取 YOLO 格式数据集的 PyTorch Dataset 类。
     """
@@ -57,16 +56,15 @@ class YoloDataset(Dataset):
 
         # 转换为 Tensor
         if boxes:
-            boxes = as_tensor(boxes, dtype=float32)
+            boxes = torch.as_tensor(boxes, dtype=torch.float32)
         else:
             #print('boxes is empty')
-            boxes = zeros((0, 4), dtype=float32)
-        labels = as_tensor(labels, dtype=int64)
+            boxes = torch.zeros((0, 4), dtype=torch.float32)
         target = {
             "boxes": BoundingBoxes(boxes, format="xyxy", canvas_size=(img_h, img_w)),
-            "labels": labels,
-            "image_id": tensor([idx]),
-            "orig_size": tensor([img_h, img_w])
+            "labels": torch.as_tensor(labels, dtype=torch.int64),
+            "image_id": torch.tensor([idx]),
+            "orig_size": torch.tensor([img_h, img_w])
         }
 
         if self.transform:
