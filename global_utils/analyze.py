@@ -41,5 +41,6 @@ def analyze(results_file:str):
     plt.show()
 
 if __name__ == '__main__':
-    analyze('./runs/train5/results.csv')
-    show_f1('./runs/train5/results.csv')
+    results_file = "E:/Projects/PyCharm/Paper2/models/Faster-RCNN/runs/train2/results.csv"
+    analyze(results_file)
+    show_f1(results_file)

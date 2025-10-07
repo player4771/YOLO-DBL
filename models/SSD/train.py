@@ -1,16 +1,42 @@
+import os
 import yaml
+import torch
+import torchvision
 from tqdm import tqdm
 from pathlib import Path
+torch.hub.set_dir('./') #修改缓存路径
+torch.backends.cudnn.benchmark=True
+os.environ['NO_ALBUMENTATIONS_UPDATE'] = '1'
 
-from torch import stack
-from torch.backends import cudnn
-cudnn.benchmark=True
-from torch.utils.data import DataLoader
-from torch.optim import lr_scheduler, AdamW
-from torch.amp import GradScaler, autocast
+from src import Backbone, SSD300
+from global_utils import EarlyStopping, YoloDataset, AlbumentationsTransform, find_new_dir, evaluate, convert_to_coco_api
 
-from dataset import YoloDataset
-from utils import create_model, SSDTransform, EarlyStopping, evaluate, find_new_dir, convert_to_coco_api
+def create_model(backbone:str='vgg16', weights:str=None, num_classes:int=21):# -> model
+    if backbone == "vgg16":
+        model = torchvision.models.detection.ssd300_vgg16(
+            weights=weights if weights else torchvision.models.detection.SSD300_VGG16_Weights.COCO_V1)
+        # 替换分类头以匹配类别数
+        model.head.classification_head = torchvision.models.detection.ssd.SSDClassificationHead(
+            in_channels=[512, 1024, 512, 256, 256, 256],  # For VGG16 backbone in SSD300
+            num_anchors=[4, 6, 6, 6, 4, 4],  # Default anchors for SSD300
+            num_classes=num_classes,
+        )
+    elif backbone == "resnet50": #暂时无法实现
+        model = SSD300(backbone=Backbone(), num_classes=num_classes)
+        pre_model_dict = torch.load(weights if weights else "./src/nvidia_ssdpyt_amp_200703.pt", map_location='cpu')
+        pre_weights_dict = pre_model_dict["model"]
+        # 删除类别预测器权重，注意，回归预测器的权重可以重用，因为不涉及num_classes
+        del_conf_loc_dict = {}
+        for k, v in pre_weights_dict.items():
+            split_key = k.split(".")
+            if "conf" in split_key:
+                continue
+            del_conf_loc_dict.update({k: v})
+        model.load_state_dict(del_conf_loc_dict, strict=False)
+    else:
+        raise "Invalid backbone, required 'vgg16' or 'resnet50'."
+
+    return model
 
 
 def collate_fn(batch):
@@ -58,22 +84,20 @@ def train(**kwargs):
 
     # 创建 Dataset
     dataset_train = YoloDataset(
-        img_dir=str(train_img_path),
-        label_dir=str(train_label_path),
-        transform=SSDTransform(is_train=True)
+        img_dir=str(train_img_path), label_dir=str(train_label_path),
+        transform=AlbumentationsTransform(is_train=True)
     )
     dataset_val = YoloDataset(
-        img_dir=str(val_img_path),
-        label_dir=str(val_label_path),
-        transform=SSDTransform(is_train=False)
+        img_dir=str(val_img_path), label_dir=str(val_label_path),
+        transform=AlbumentationsTransform(is_train=False)
     )
 
     # 创建 DataLoader
-    train_loader = DataLoader(
+    train_loader = torch.utils.data.DataLoader(
         dataset_train, batch_size=cfg['batch_size'], shuffle=True, pin_memory=True,
         num_workers=cfg['num_workers'], collate_fn=collate_fn, persistent_workers=True
     )
-    val_loader = DataLoader(
+    val_loader = torch.utils.data.DataLoader(
         dataset_val, batch_size=cfg['batch_size'], shuffle=False, pin_memory=True,
         num_workers=cfg['num_workers'], collate_fn=collate_fn, persistent_workers=True
     )
@@ -81,17 +105,16 @@ def train(**kwargs):
     model = create_model(backbone=cfg['backbone'], num_classes=num_classes)
     model.to(cfg['device'])
 
-    scaler = GradScaler()
+    scaler = torch.amp.GradScaler()
     params = [p for p in model.parameters() if p.requires_grad]
     #optimizer = SGD(params, lr=cfg['lr'], momentum=0.9, weight_decay=cfg['weight_decay'])
-    optimizer = AdamW(params, lr=cfg['lr'], weight_decay=cfg['weight_decay'])
+    optimizer = torch.optim.AdamW(params, lr=cfg['lr'], weight_decay=cfg['weight_decay'])
     #scheduler = lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
-    scheduler = lr_scheduler.CosineAnnealingLR(optimizer, T_max=cfg['epochs'], eta_min=cfg['lr'] * cfg['lf'])
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=cfg['epochs'], eta_min=cfg['lr'] * cfg['lf'])
     early_stopper = EarlyStopping(patience=cfg['patience'], verbose=True, path=str(output_dir/'best.pth'))
     warmup_iters = cfg['warmup']*len(train_loader) if cfg['warmup'] else 0
-    warmup_scheduler = lr_scheduler.LinearLR(optimizer, start_factor=1e-3, total_iters=warmup_iters)
+    warmup_scheduler = torch.optim.lr_scheduler.LinearLR(optimizer, start_factor=1e-3, total_iters=warmup_iters)
     coco_gt = convert_to_coco_api(val_loader.dataset)
-
 
     for epoch in range(cfg['epochs']):
         model.train()
@@ -99,10 +122,10 @@ def train(**kwargs):
         pbar = tqdm(train_loader, desc=f"Train[{epoch}]")
         for (images, targets) in pbar:
             #images = list(image.to(cfg['device'], non_blocking=True) for image in images)
-            images = stack(images, dim=0).to(device=cfg['device'], non_blocking=True)
+            images = torch.stack(images, dim=0).to(device=cfg['device'], non_blocking=True)
             targets = [{k: v.to(cfg['device'], non_blocking=True) for k, v in t.items()} for t in targets]
 
-            with autocast(device_type=cfg['device']):
+            with torch.amp.autocast(device_type=cfg['device']):
                 loss_dict = model(images, targets)
                 losses = sum(loss for loss in loss_dict.values())
 
@@ -138,6 +161,6 @@ if __name__ == '__main__':
         patience=10,
         lr=1e-3,
         warmup=1,
-        batch_size=16,
-        num_workers=8
+        batch_size=8,
+        num_workers=4
     )

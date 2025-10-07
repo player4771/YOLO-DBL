@@ -1,6 +1,5 @@
-
+import cv2
 import torch
-from PIL import Image
 from pathlib import Path
 from torchvision.tv_tensors import BoundingBoxes
 
@@ -28,8 +27,9 @@ class YoloDataset(torch.utils.data.Dataset):
         label_path = self.label_files[img_path.stem]
 
         # 读取图片
-        image = Image.open(img_path).convert("RGB")
-        img_w, img_h = image.size
+        image = cv2.imread(str(img_path))
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        img_w, img_h, _ = image.shape #width, height, channels
 
         # 读取 YOLO 标注
         boxes = []
@@ -38,13 +38,12 @@ class YoloDataset(torch.utils.data.Dataset):
             for line in f:
                 parts = line.strip().split()
                 if len(parts) != 5:
-                    continue
+                    raise Exception(f"Invalid label format in {label_path}")
 
-                # YOLO format: class_id, x_center, y_center, width, height (normalized)
-                class_id = int(parts[0])
-                x_center, y_center, w, h = map(float, parts[1:])
+                # YOLO format: class_id(int), x_center, y_center, width, height(normalized, float)
+                class_id, x_center, y_center, w, h = map(float, parts)
 
-                # 转换为 [xmin, ymin, xmax, ymax] 绝对坐标
+                # 转换为VOC格式: [xmin, ymin, xmax, ymax]
                 x_min = (x_center - w / 2) * img_w
                 y_min = (y_center - h / 2) * img_h
                 x_max = (x_center + w / 2) * img_w
@@ -52,22 +51,26 @@ class YoloDataset(torch.utils.data.Dataset):
 
                 boxes.append([x_min, y_min, x_max, y_max])
                 # 注意：YOLO类别索引从0开始，SSD的有效类别从1开始（0是背景），所以要+1
-                labels.append(class_id + 1)
+                labels.append(int(class_id) + 1)
+
+        if not boxes:
+            boxes = torch.zeros((0, 4), dtype=torch.float32)
+
+        if self.transform:
+            transformed = self.transform(image, bboxes=boxes, class_labels=labels)
+            image = transformed['image']
+            boxes = transformed['bboxes']
+            labels = transformed['class_labels']
 
         # 转换为 Tensor
-        if boxes:
-            boxes = torch.as_tensor(boxes, dtype=torch.float32)
-        else:
-            #print('boxes is empty')
-            boxes = torch.zeros((0, 4), dtype=torch.float32)
+        boxes = torch.as_tensor(boxes, dtype=torch.float32)
+        boxes = BoundingBoxes(boxes, format="xyxy", canvas_size=(img_h, img_w))
+
         target = {
-            "boxes": BoundingBoxes(boxes, format="xyxy", canvas_size=(img_h, img_w)),
+            "boxes": boxes,
             "labels": torch.as_tensor(labels, dtype=torch.int64),
             "image_id": torch.tensor([idx]),
             "orig_size": torch.tensor([img_h, img_w])
         }
-
-        if self.transform:
-            image, target = self.transform(image, target)
 
         return image, target
