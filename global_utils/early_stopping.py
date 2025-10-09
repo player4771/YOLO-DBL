@@ -5,7 +5,7 @@ class EarlyStopping:
     """
     当监控的指标停止改善时，提前停止训练。
     """
-    def __init__(self, patience=7, delta=0, path='./checkpoint.pth', verbose=False, trace_func=print):
+    def __init__(self, patience:int=7, delta:float=0, path:str='./checkpoint.pth', verbose:bool=True, trace_func=print):
         """
         Args:
             patience (int): 在停止训练前，等待多少个 epoch 没有改善。
@@ -24,9 +24,12 @@ class EarlyStopping:
         self.path = path
         self.trace_func = trace_func
 
-    def update(self, score, model):
-        # 我们监控的是 mAP，所以分数越高越好
+    def __call__(self, score:float, model):
+        """用法和效果等同于update(...)"""
+        self.update(score, model)
 
+    def update(self, score:float, model):
+        """当score提高时保存模型， 否则早停计数+1"""
         if self.best_score is None:
             self.best_score = score
             self.save_checkpoint(score, model)
@@ -42,9 +45,9 @@ class EarlyStopping:
             self.counter = 0
 
     def save_checkpoint(self, score, model):
-        """当验证指标改善时，保存模型。"""
+        """当指标改善时，保存模型。"""
         if self.verbose:
-            self.trace_func(f'Val metric improved: {self.score_min:.6f} --> {score:.6f}.  Saving model ...')
+            self.trace_func(f'Val score improved: {self.score_min:.6f} --> {score:.6f}.  Saving model ...')
         torch.save(model.state_dict(), self.path)
         self.score_min = score
 

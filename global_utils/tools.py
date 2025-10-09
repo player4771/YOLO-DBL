@@ -1,5 +1,8 @@
 import re
+import time
+import threading
 import pandas as pd
+import pyautogui as pg
 from pathlib import Path
 
 def find_new_dir(dir_: str | Path) -> str | Path: #给定默认路径，寻找下一个未被占用的路径
@@ -37,3 +40,30 @@ def write_coco_stat(stats:list, outfile: str | Path) -> None:
             df = pd.concat([df, pd.DataFrame([stats], columns=metric_names)], ignore_index=True)
 
     df.to_csv(outfile, index=False)
+
+class WindowsSleepAvoider:
+    def __init__(self, delay:int=0, distance:int=20):
+        self.delay:int = delay #每次移动鼠标的时间间隔(单位: 秒)
+        self.distance:int = distance #鼠标移动的幅度(单位：像素)
+        self.count:int = 0 #计数，统计当前为第几次触发
+        self.running:bool = False #是否启动
+
+    def trigger(self):
+        """移动一次鼠标.\n
+        偶数次时右移, 否则左移. 用时固定为0.5秒"""
+        offset = self.distance if self.count % 2 == 0 else -self.distance
+        pg.move(offset, 0, 0.5)
+        self.count += 1
+
+    def loop(self):
+        while self.running:
+            self.trigger()
+            time.sleep(self.delay)
+
+    def start(self):
+        self.running = True
+        th = threading.Thread(target=self.loop, name="WindowsSleepAvoider(running)")
+        th.start()
+
+    def stop(self):
+        self.running = False

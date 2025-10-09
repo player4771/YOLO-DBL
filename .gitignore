@@ -8,3 +8,4 @@
 /models/SSD/src/nvidia_ssdpyt_amp_200703.pt
 /models/Faster-RCNN/runs/
 /models/Faster-RCNN/checkpoints/
+/models/Mask-RCNN/checkpoints/

@@ -2,45 +2,74 @@ from pathlib import Path
 import pandas as pd
 import matplotlib.pyplot as plt
 
-def show_f1(results_file:str):
-    """绘制F1, PR, ROC等曲线"""
-    data = pd.read_csv(results_file)
+def parse_results(results:str|Path|pd.DataFrame) -> pd.DataFrame:
+    """输入：results.csv的路径 或 dataframe \n
+    csv/df的列格式需与cocoEval输出一致(6AP+6AR) \n
+    (不进行内容检查)"""
+    if isinstance(results, str):
+        return pd.read_csv(results)
+    elif isinstance(results, Path):
+        return pd.read_csv(str(results))
+    elif isinstance(results, pd.DataFrame):
+        return results
+    else:
+        raise TypeError("Unknown input, need str or pd.DataFrame")
+
+
+
+def plt_coco_f1(results, show=True):
+    """绘制F1曲线"""
+    data = parse_results(results)
     x = range(1, data.shape[0]+1)
 
     precision = data.iloc[:,0] #取precision = mAP = AP@IoU=0.50:0.95
     recall = data.iloc[:,8] #取recall = AR100 = AR@maxDets=100
     f1 = (2*precision*recall)/(precision+recall)
-    plt.figure(dpi=300)
-    plt.plot(x, f1)
-    plt.title('F1 - mAP/AR100')
-    plt.savefig(Path(results_file).parent/'f1.png')
-    plt.show()
 
-def analyze(results_file:str):
-    data = pd.read_csv(results_file)
+    fig, ax = plt.subplots(dpi=300)
+    ax.plot(x, f1)
+    ax.set_title('F1 - mAP/AR100')
+    if isinstance(results, str):
+        fig.savefig(Path(results).parent/'f1.png')
+    if show:
+        fig.show()
+    return fig, ax
+
+def plt_coco_ap(results, show=True):
+    data = parse_results(results)
     x = range(1, data.shape[0]+1)
 
-    plt.figure(num=1, dpi=300)
-    plt.axis('off')
-    for i in range(0, 6):
-        plt.subplot(2, 3, i+1)
-        plt.plot(x, data.iloc[:,i])
-        plt.title(data.columns[i], fontsize=10)
-    plt.tight_layout()
-    plt.savefig(Path(results_file).parent/'results_AP.png')
+    fig, axes = plt.subplots(nrows=2, ncols=3, dpi=300)
+    for i, ax in enumerate(axes.flat):
+        ax.plot(x, data.iloc[:,i])
+        ax.set_title(data.columns[i], fontsize=10)
+    fig.tight_layout()
+    if isinstance(results, str):
+        fig.savefig(Path(results).parent/'results_AP.png')
+    if show:
+        fig.show()
+    return fig, axes
 
-    plt.figure(num=2, dpi=300)
-    plt.axis('off')
-    for i in range(6, 12):
-        plt.subplot(2, 3, i-6+1)
-        plt.plot(x, data.iloc[:, i])
-        plt.title(data.columns[i], fontsize=10)
-    plt.tight_layout()
-    plt.savefig(Path(results_file).parent/'results_AR.png')
+def plt_coco_ar(results, show=True):
+    data = parse_results(results)
+    x = range(1, data.shape[0]+1)
 
-    plt.show()
+    fig, axes = plt.subplots(nrows=2, ncols=3, dpi=300)
+    for i, ax in enumerate(axes.flat):
+        ax.plot(x, data.iloc[:, i+6])
+        ax.set_title(data.columns[i+6], fontsize=10)
+    fig.tight_layout()
+    if isinstance(results, str):
+        fig.savefig(Path(results).parent / 'results_AR.png')
+    if show:
+        fig.show()
+    return fig, axes
+
+def plt_coco_stats(results_file:str|Path, show=True):
+    plt_coco_ap(results_file, show)
+    plt_coco_ar(results_file, show)
+    plt_coco_f1(results_file, show)
 
 if __name__ == '__main__':
-    results_file = "E:/Projects/PyCharm/Paper2/models/Faster-RCNN/runs/train2/results.csv"
-    analyze(results_file)
-    show_f1(results_file)
+    results_file = "E:/Projects/PyCharm/Paper2/models/SSD/runs/train8/results.csv"
+    plt_coco_stats(results_file, show=True)

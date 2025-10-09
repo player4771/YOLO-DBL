@@ -1,4 +1,3 @@
-import os
 import yaml
 import torch
 import torchvision
@@ -6,33 +5,50 @@ from tqdm import tqdm
 from pathlib import Path
 torch.hub.set_dir('./') #修改缓存路径
 torch.backends.cudnn.benchmark=True
-os.environ['NO_ALBUMENTATIONS_UPDATE'] = '1'
+from torchvision.models.detection.anchor_utils import DefaultBoxGenerator
 
-from src import Backbone, SSD300
-from global_utils import EarlyStopping, YoloDataset, AlbumentationsTransform, find_new_dir, evaluate, convert_to_coco_api
+from backbone import ResNetBackbone
+from global_utils import (EarlyStopping, YoloDataset, AlbumentationsTransform,
+                          find_new_dir, evaluate, convert_to_coco_api, WindowsSleepAvoider)
 
-def create_model(backbone:str='vgg16', weights:str=None, num_classes:int=21):# -> model
+def create_model(backbone:str='vgg16', num_classes:int=4): # -> model
     if backbone == "vgg16":
-        model = torchvision.models.detection.ssd300_vgg16(
-            weights=weights if weights else torchvision.models.detection.SSD300_VGG16_Weights.COCO_V1)
+        model = torchvision.models.detection.ssd300_vgg16(weights='DEFAULT')
         # 替换分类头以匹配类别数
         model.head.classification_head = torchvision.models.detection.ssd.SSDClassificationHead(
             in_channels=[512, 1024, 512, 256, 256, 256],  # For VGG16 backbone in SSD300
             num_anchors=[4, 6, 6, 6, 4, 4],  # Default anchors for SSD300
             num_classes=num_classes,
         )
-    elif backbone == "resnet50": #暂时无法实现
-        model = SSD300(backbone=Backbone(), num_classes=num_classes)
-        pre_model_dict = torch.load(weights if weights else "./src/nvidia_ssdpyt_amp_200703.pt", map_location='cpu')
-        pre_weights_dict = pre_model_dict["model"]
-        # 删除类别预测器权重，注意，回归预测器的权重可以重用，因为不涉及num_classes
-        del_conf_loc_dict = {}
-        for k, v in pre_weights_dict.items():
-            split_key = k.split(".")
-            if "conf" in split_key:
-                continue
-            del_conf_loc_dict.update({k: v})
-        model.load_state_dict(del_conf_loc_dict, strict=False)
+    elif backbone == "resnet50":
+        resnet_backbone = ResNetBackbone()
+
+        # 定义每个特征图的输出通道数
+        # 对应 ResNetBackbone 的 layer2, layer3, extra1, extra2, extra3, extra4
+        out_channels = [512, 1024, 512, 256, 256, 256]
+
+        # 创建 Anchor Generator
+        # SSD300 使用 6 个特征图，每个特征图的 anchor 数量
+        num_anchors = [4, 6, 6, 6, 4, 4]
+        anchor_generator = torchvision.models.detection.anchor_utils.DefaultBoxGenerator(
+            aspect_ratios=[[2], [2, 3], [2, 3], [2, 3], [2], [2]],
+        )
+
+        # 创建 SSD 的检测头
+        head = torchvision.models.detection.ssd.SSDHead(
+            in_channels=out_channels,
+            num_anchors=num_anchors,
+            num_classes=num_classes
+        )
+
+        # 组装成完整的 SSD 模型
+        model = torchvision.models.detection.ssd.SSD(
+            backbone=resnet_backbone,
+            num_classes=num_classes,
+            anchor_generator=anchor_generator,
+            head=head,
+            size=(300,300)
+        )
     else:
         raise "Invalid backbone, required 'vgg16' or 'resnet50'."
 
@@ -47,9 +63,10 @@ def collate_fn(batch):
 
 
 def train(**kwargs):
-    cfg={ #default args
+    cfg = { #default args
         'backbone':'vgg16',
         'data':None, #不可缺省
+        'dataset': {}, #避免类型检查警告
         'project':'./runs',
         'name':'train',
         'epochs':20,
@@ -59,47 +76,48 @@ def train(**kwargs):
         'num_workers':8,
         'weight_decay':1e-5,
         'patience':5,
-        'device':'cuda',
-        'warmup':None #预热epoch数，None为禁用
+        'device': 'cuda' if torch.cuda.is_available() else 'cpu',
+        'warmup_epochs': 0,
     }
-
     cfg.update(kwargs)
 
     with open(cfg['data'], 'r') as infile:
-        cfg.update(yaml.load(infile, Loader=yaml.FullLoader))
+        cfg['dataset'] = yaml.load(infile, Loader=yaml.FullLoader)
 
-    num_classes = cfg['nc'] + 1 # +1 是因为 SSD 需要一个背景类
+    num_classes = cfg['dataset']['nc'] + 1 # +1 是因为 SSD 需要一个背景类
     output_dir = find_new_dir(Path(cfg['project'], cfg['name']))
     output_dir.mkdir(parents=True, exist_ok=True)
 
     with open(output_dir/'args.yaml', 'w') as outfile:
         yaml.dump(cfg, outfile)
 
-    data_path = Path(cfg['data']).parent
-    train_img_path = data_path / cfg['train']
-    val_img_path = data_path / cfg['val']
-    train_label_path = train_img_path.parent / 'labels'
-    val_label_path = val_img_path.parent / 'labels'
-    results_file = output_dir/'results.csv'
+    data_root = Path(cfg['data']).parent
+    train_img_dir = data_root / cfg['dataset']['train']
+    val_img_dir = data_root / cfg['dataset']['val']
+    train_label_dir = train_img_dir.parent / 'labels'
+    val_label_dir = val_img_dir.parent / 'labels'
+    results_file = output_dir / 'results.csv'
 
     # 创建 Dataset
     dataset_train = YoloDataset(
-        img_dir=str(train_img_path), label_dir=str(train_label_path),
-        transform=AlbumentationsTransform(is_train=True)
+        img_dir=str(train_img_dir), label_dir=str(train_label_dir),
+        transform=AlbumentationsTransform(is_train=True, size=300)
     )
     dataset_val = YoloDataset(
-        img_dir=str(val_img_path), label_dir=str(val_label_path),
-        transform=AlbumentationsTransform(is_train=False)
+        img_dir=str(val_img_dir), label_dir=str(val_label_dir),
+        transform=AlbumentationsTransform(is_train=False, size=300)
     )
 
     # 创建 DataLoader
     train_loader = torch.utils.data.DataLoader(
-        dataset_train, batch_size=cfg['batch_size'], shuffle=True, pin_memory=True,
-        num_workers=cfg['num_workers'], collate_fn=collate_fn, persistent_workers=True
+        dataset_train, batch_size=cfg['batch_size'], num_workers=cfg['num_workers'],
+        pin_memory=True, shuffle=True, persistent_workers=True,
+        collate_fn=collate_fn
     )
     val_loader = torch.utils.data.DataLoader(
-        dataset_val, batch_size=cfg['batch_size'], shuffle=False, pin_memory=True,
-        num_workers=cfg['num_workers'], collate_fn=collate_fn, persistent_workers=True
+        dataset_val, batch_size=cfg['batch_size'], num_workers=cfg['num_workers'],
+        pin_memory=True, shuffle=False, persistent_workers=True,
+        collate_fn=collate_fn
     )
 
     model = create_model(backbone=cfg['backbone'], num_classes=num_classes)
@@ -112,9 +130,12 @@ def train(**kwargs):
     #scheduler = lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=cfg['epochs'], eta_min=cfg['lr'] * cfg['lf'])
     early_stopper = EarlyStopping(patience=cfg['patience'], verbose=True, path=str(output_dir/'best.pth'))
-    warmup_iters = cfg['warmup']*len(train_loader) if cfg['warmup'] else 0
+    warmup_iters = cfg['warmup_epochs']*len(train_loader)
     warmup_scheduler = torch.optim.lr_scheduler.LinearLR(optimizer, start_factor=1e-3, total_iters=warmup_iters)
     coco_gt = convert_to_coco_api(val_loader.dataset)
+
+    fucker = WindowsSleepAvoider(delay=600, distance=200)
+    fucker.start()
 
     for epoch in range(cfg['epochs']):
         model.train()
@@ -126,19 +147,20 @@ def train(**kwargs):
             targets = [{k: v.to(cfg['device'], non_blocking=True) for k, v in t.items()} for t in targets]
 
             with torch.amp.autocast(device_type=cfg['device']):
-                loss_dict = model(images, targets)
-                losses = sum(loss for loss in loss_dict.values())
+                results = model(images, targets)
+                losses = torch.Tensor(sum(loss for loss in results.values()))
 
             optimizer.zero_grad()
             scaler.scale(losses).backward()
             scaler.step(optimizer)
             scaler.update()
 
-            warmup_scheduler.step()
+            if epoch < cfg['warmup_epochs']:
+                warmup_scheduler.step()
 
-            pbar.set_postfix(loss=losses.item())
+            pbar.set_postfix(lr=scheduler.get_last_lr()[0], loss=losses.item())
 
-        if not cfg['warmup'] or epoch >= cfg['warmup']:
+        if epoch >= cfg['warmup_epochs']:
             scheduler.step()
 
         coco_eval = evaluate(model, val_loader, cfg['device'], coco_gt=coco_gt, outfile=results_file)
@@ -150,6 +172,7 @@ def train(**kwargs):
             break
 
     print(f"Training finished, Results saved to {results_file}.")
+    fucker.stop()
 
 
 if __name__ == '__main__':
@@ -160,7 +183,8 @@ if __name__ == '__main__':
         epochs=100,
         patience=10,
         lr=1e-3,
-        warmup=1,
+        warmup_epochs=1,
         batch_size=8,
         num_workers=4
     )
+
