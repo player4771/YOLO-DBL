@@ -1,9 +1,35 @@
 import re
 import time
+import torch
 import threading
-import pandas as pd
 import pyautogui as pg
 from pathlib import Path
+
+def get_dataloader(cfg:dict, dataset, transform, is_train:bool, collate_fn): # -> dataloader
+    """
+    cfg requires:\n
+    data(path to data.yaml from dataset),\n
+    dataset(dict from data.yaml),\n
+    img_size(for resize),\n
+    batch_size+num_workers(for dataloader)\n
+    \n
+    dataset: a dataset class to use
+    transform: a transform(class) to use
+    """
+    data_root = Path(cfg['data']).parent
+    img_dir = data_root / dict(cfg['dataset'])['train']
+    label_dir = img_dir.parent / 'labels'
+
+    dataset_ = dataset(
+        img_dir=img_dir, label_dir=label_dir,
+        transform=transform(is_train=is_train, size=cfg['img_size'])
+    )
+    loader = torch.utils.data.DataLoader(
+        dataset_, batch_size=cfg['batch_size'], shuffle=is_train,
+        num_workers=cfg['num_workers'], pin_memory=True,
+        collate_fn=collate_fn
+    )
+    return loader
 
 def find_new_dir(dir_: str | Path) -> str | Path: #给定默认路径，寻找下一个未被占用的路径
     ret = str(dir_)
@@ -20,27 +46,6 @@ def find_new_dir(dir_: str | Path) -> str | Path: #给定默认路径，寻找�
     else:
         raise TypeError('dir_ = str/Path')
 
-def write_coco_stat(stats:list, outfile: str | Path) -> None:
-    metric_names = [
-        'mAP', 'AP50', 'AP75',
-        'APs', 'APm', 'APl',
-        'AR1', 'AR10', 'AR100',
-        'ARs', 'ARm', 'ARl'
-    ]
-
-    if not Path(outfile).exists():
-        Path(outfile).parent.mkdir(parents=True, exist_ok=True)
-        # Dataframe默认接受一个二维列表，第一维为列，内部每个列表为行
-        df = pd.DataFrame([stats], columns=metric_names)
-    else:
-        df = pd.read_csv(outfile)
-        if df.empty:
-            df = pd.DataFrame([stats], columns=metric_names)
-        else:
-            df = pd.concat([df, pd.DataFrame([stats], columns=metric_names)], ignore_index=True)
-
-    df.to_csv(outfile, index=False)
-
 class WindowsSleepAvoider:
     def __init__(self, delay:int=0, distance:int=20):
         self.delay:int = delay #每次移动鼠标的时间间隔(单位: 秒)
@@ -52,18 +57,31 @@ class WindowsSleepAvoider:
         """移动一次鼠标.\n
         偶数次时右移, 否则左移. 用时固定为0.5秒"""
         offset = self.distance if self.count % 2 == 0 else -self.distance
-        pg.move(offset, 0, 0.5)
+        pg.move(xOffset=offset, yOffset=0, duration=0.5)
         self.count += 1
 
     def loop(self):
         while self.running:
             self.trigger()
-            time.sleep(self.delay)
+            time_int = self.delay // 1 #整数部分
+            time_dec = self.delay - time_int #小数部分
+            for i in range(time_int):
+                if self.running: #保证及时响应
+                    time.sleep(1)
+            time.sleep(time_dec)
 
-    def start(self):
+    def start(self, interval:float=None):
         self.running = True
-        th = threading.Thread(target=self.loop, name="WindowsSleepAvoider(running)")
+        th = threading.Thread(target=self.loop, name="WSA(running)")
         th.start()
+        if interval:
+            threading.Timer(
+                interval,
+                lambda:setattr(self, 'running', False)
+            ).start()
 
     def stop(self):
         self.running = False
+
+def this_time() -> str:
+    return time.strftime('%Y/%m/%d %H:%M:%S', time.localtime())

@@ -4,7 +4,6 @@ from pathlib import Path
 from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
 
-from .tools import write_coco_stat
 
 def convert_to_coco_api(ds):
     """将数据集转换为COCO API格式以进行评估"""
@@ -108,3 +107,25 @@ def evaluate(model, data_loader, device='cpu',
         write_coco_stat(coco_eval.stats, outfile)
 
     return coco_eval
+
+
+def write_coco_stat(stats:list, outfile: str | Path) -> None:
+    metric_names = [
+        'mAP', 'AP50', 'AP75',
+        'APs', 'APm', 'APl',
+        'AR1', 'AR10', 'AR100',
+        'ARs', 'ARm', 'ARl'
+    ]
+
+    if not Path(outfile).exists():
+        Path(outfile).parent.mkdir(parents=True, exist_ok=True)
+        # Dataframe默认接受一个二维列表，第一维为列，内部每个列表为行
+        df = pd.DataFrame([stats], columns=metric_names)
+    else:
+        df = pd.read_csv(outfile)
+        if df.empty:
+            df = pd.DataFrame([stats], columns=metric_names)
+        else:
+            df = pd.concat([df, pd.DataFrame([stats], columns=metric_names)], ignore_index=True)
+
+    df.to_csv(outfile, index=False)

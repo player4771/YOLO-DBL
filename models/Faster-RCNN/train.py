@@ -7,7 +7,8 @@ torch.hub.set_dir('./') #修改缓存路径
 torch.backends.cudnn.benchmark = True
 torch.backends.cuda.matmul.allow_tf32 = True
 
-from global_utils import YoloDataset, EarlyStopping, find_new_dir, AlbumentationsTransform, evaluate
+from global_utils import (YoloDataset, EarlyStopping, AlbumentationsTransform,
+                          find_new_dir, evaluate, convert_to_coco_api)
 
 def create_model(backbone='resnet50', num_classes=4, **kwargs):
     models = {
@@ -96,6 +97,7 @@ def train(**kwargs):
     early_stopper = EarlyStopping(patience=cfg['patience'], delta=cfg['delta'], path=str(output_dir/'best.pth'))
     warmup_iters = cfg['warmup_epochs'] * len(train_loader)
     warmup_scheduler = torch.optim.lr_scheduler.LinearLR(optimizer, start_factor=1e-3, total_iters=warmup_iters)
+    coco_gt = convert_to_coco_api(val_loader.dataset)
 
     for epoch in range(cfg['epochs']):
         model.train()
@@ -122,7 +124,7 @@ def train(**kwargs):
         if epoch >= cfg['warmup_epochs']:
             scheduler.step()
 
-        coco_eval = evaluate(model, val_loader, device, outfile=results_file)
+        coco_eval = evaluate(model, val_loader, device, coco_gt=coco_gt, outfile=results_file)
         mAP = coco_eval.stats[0] if coco_eval else 0.0
 
         early_stopper.update(mAP, model)
@@ -130,7 +132,7 @@ def train(**kwargs):
             print(f'Early stopping with mAP {mAP:.6f}')
             break
 
-    torch.save(model.state_dict(), output_dir/'last.pth')
+    #torch.save(model.state_dict(), output_dir/'last.pth')
     print(f"Training finished, Results saved to {results_file}.")
 
 

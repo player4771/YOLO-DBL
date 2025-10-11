@@ -3,6 +3,7 @@ import torch
 import torchvision
 from tqdm import tqdm
 from pathlib import Path
+from datetime import datetime
 torch.hub.set_dir('./') #修改缓存路径
 torch.backends.cudnn.benchmark=True
 from torchvision.models.detection.anchor_utils import DefaultBoxGenerator
@@ -85,8 +86,11 @@ def train(**kwargs):
         cfg['dataset'] = yaml.load(infile, Loader=yaml.FullLoader)
 
     num_classes = cfg['dataset']['nc'] + 1 # +1 是因为 SSD 需要一个背景类
+    device = torch.device(cfg['device'])
     output_dir = find_new_dir(Path(cfg['project'], cfg['name']))
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    cfg['start_time'] = datetime.now().strftime("%Y/%m/%d %H:%M:%S")
 
     with open(output_dir/'args.yaml', 'w') as outfile:
         yaml.dump(cfg, outfile)
@@ -100,11 +104,11 @@ def train(**kwargs):
 
     # 创建 Dataset
     dataset_train = YoloDataset(
-        img_dir=str(train_img_dir), label_dir=str(train_label_dir),
+        img_dir=train_img_dir, label_dir=train_label_dir,
         transform=AlbumentationsTransform(is_train=True, size=300)
     )
     dataset_val = YoloDataset(
-        img_dir=str(val_img_dir), label_dir=str(val_label_dir),
+        img_dir=val_img_dir, label_dir=val_label_dir,
         transform=AlbumentationsTransform(is_train=False, size=300)
     )
 
@@ -121,7 +125,7 @@ def train(**kwargs):
     )
 
     model = create_model(backbone=cfg['backbone'], num_classes=num_classes)
-    model.to(cfg['device'])
+    model.to(device)
 
     scaler = torch.amp.GradScaler()
     params = [p for p in model.parameters() if p.requires_grad]
@@ -142,9 +146,8 @@ def train(**kwargs):
 
         pbar = tqdm(train_loader, desc=f"Train[{epoch}]")
         for (images, targets) in pbar:
-            #images = list(image.to(cfg['device'], non_blocking=True) for image in images)
-            images = torch.stack(images, dim=0).to(device=cfg['device'], non_blocking=True)
-            targets = [{k: v.to(cfg['device'], non_blocking=True) for k, v in t.items()} for t in targets]
+            images = torch.stack(images, dim=0).to(device=device, non_blocking=True)
+            targets = [{k: v.to(device, non_blocking=True) for k, v in t.items()} for t in targets]
 
             with torch.amp.autocast(device_type=cfg['device']):
                 results = model(images, targets)
@@ -158,12 +161,12 @@ def train(**kwargs):
             if epoch < cfg['warmup_epochs']:
                 warmup_scheduler.step()
 
-            pbar.set_postfix(lr=scheduler.get_last_lr()[0], loss=losses.item())
+            pbar.set_postfix(lr=optimizer.param_groups[0]['lr'], loss=losses.item())
 
         if epoch >= cfg['warmup_epochs']:
             scheduler.step()
 
-        coco_eval = evaluate(model, val_loader, cfg['device'], coco_gt=coco_gt, outfile=results_file)
+        coco_eval = evaluate(model, val_loader, device, coco_gt=coco_gt, outfile=results_file)
         mAP = coco_eval.stats[0] if coco_eval else 0.0
 
         early_stopper.update(mAP, model)
@@ -177,7 +180,7 @@ def train(**kwargs):
 
 if __name__ == '__main__':
     train(
-        backbone='vgg16',
+        backbone='resnet50',
         data="E:/Projects/Datasets/tea_leaf_diseases/data_abs.yaml",
         project="./runs",
         epochs=100,

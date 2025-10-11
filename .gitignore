@@ -1,11 +1,13 @@
 /.idea/deployment.xml
 /models/RCNN/runs/
+/models/RCNN/checkpoints/
 /models/Fast-RCNN/runs/
+/models/Fast-RCNN/checkpoints/
 /models/SSD/runs/
 /models/SSD/checkpoints/
-/models/Faster-RCNN_VOC/
 /models/SSD_VOC/
-/models/SSD/src/nvidia_ssdpyt_amp_200703.pt
 /models/Faster-RCNN/runs/
 /models/Faster-RCNN/checkpoints/
-/models/Mask-RCNN/checkpoints/
+/models/YOLO/yolov13n.pt
+/models/YOLO/yolov13s.pt
+/models/YOLO/runs/

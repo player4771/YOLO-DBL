@@ -71,5 +71,5 @@ def plt_coco_stats(results_file:str|Path, show=True):
     plt_coco_f1(results_file, show)
 
 if __name__ == '__main__':
-    results_file = "E:/Projects/PyCharm/Paper2/models/SSD/runs/train8/results.csv"
+    results_file = "E:/Projects/PyCharm/Paper2/models/SSD/runs/train6/results.csv"
     plt_coco_stats(results_file, show=True)

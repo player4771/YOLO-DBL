@@ -1,20 +1,5 @@
 import torch
-import yaml
-import os
-import cv2
-import numpy as np
-from torch.utils.data import Dataset, DataLoader
-from torchvision import transforms
 from torchvision.ops import box_iou
-from tqdm import tqdm
-
-
-def parse_data_cfg(path):
-    """解析data.yaml文件"""
-    with open(path, 'r') as f:
-        data = yaml.safe_load(f)
-    return data
-
 
 def get_train_proposals_for_dataset(gt_boxes, cfg):
     """为单个图像生成训练用的RoIs(Proposals)"""
@@ -92,128 +77,40 @@ def compute_targets_for_dataset(proposals, gt_boxes, gt_labels, cfg):
     return target_labels, targets
 
 
-class CustomDataset(Dataset):
-    def __init__(self, img_path, cfg, is_train=True):
-        self.img_path = img_path
-        self.img_files = sorted(
-            [os.path.join(img_path, f) for f in os.listdir(img_path) if f.lower().endswith(('.jpg', '.png', '.jpeg'))])
-        self.label_files = [f.replace('images', 'labels').replace(os.path.splitext(f)[1], '.txt') for f in
-                            self.img_files]
+class FastRCNNCollator:
+    def __init__(self, cfg):
         self.cfg = cfg
-        self.is_train = is_train
 
-        # --- 核心修改：缓存逻辑 ---
-        # 定义缓存文件路径，例如: .../dataset/train.cache
-        parent_dir = os.path.abspath(os.path.join(img_path, os.pardir, os.pardir))
-        set_name = os.path.basename(os.path.abspath(os.path.join(img_path, os.pardir)))
-        cache_path = os.path.join(parent_dir, f"{set_name}.cache")
+    def __call__(self, batch):
+        images, targets = zip(*batch)
+        images = torch.stack(images, dim=0)
 
-        if os.path.exists(cache_path):
-            print(f"Loading cache from {cache_path}")
-            self.cached_items = torch.load(cache_path)
-            if len(self.cached_items) != len(self.img_files):
-                print("Cache is outdated or invalid, re-creating...")
-                self.cached_items = self._create_cache(cache_path)
-        else:
-            self.cached_items = self._create_cache(cache_path)
+        all_proposals = []
+        all_target_labels = []
+        all_target_deltas = []
 
-    def _create_cache(self, cache_path):
-        """遍历整个数据集，预计算proposals和targets，并保存到文件"""
-        set_name = os.path.basename(os.path.abspath(os.path.join(self.img_path, os.pardir)))
-        print(f"Creating cache for {set_name} set at {cache_path}...")
+        for i in range(len(images)):
+            gt_boxes = targets[i]['boxes']
+            gt_labels = targets[i]['labels']
 
-        items_to_cache = []
-        pbar = tqdm(range(len(self.img_files)), desc=f"Caching {set_name} data")
-
-        for index in pbar:
-            # 1. 读取图像尺寸以进行坐标缩放
-            img = cv2.imread(self.img_files[index])
-            h, w, _ = img.shape
-            scale = self.cfg['img_size'] / max(h, w)
-            resized_h, resized_w = int(h * scale), int(w * scale)
-
-            # 2. 读取标签
-            boxes = []
-            label_path = self.label_files[index]
-            if os.path.exists(label_path):
-                with open(label_path, 'r') as f:
-                    for line in f.readlines():
-                        cls, x, y, w_box, h_box = map(float, line.split())
-                        x1 = (x - w_box / 2) * resized_w
-                        y1 = (y - h_box / 2) * resized_h
-                        x2 = (x + w_box / 2) * resized_w
-                        y2 = (y + h_box / 2) * resized_h
-                        boxes.append([int(cls), x1, y1, x2, y2])
-
-            boxes = torch.tensor(boxes, dtype=torch.float32)
-            gt_boxes = boxes[:, 1:] if len(boxes) > 0 else torch.empty((0, 4))
-            gt_labels = boxes[:, 0].long() if len(boxes) > 0 else torch.empty(0, dtype=torch.long)
-
-            # 3. 生成 proposals 和 targets
+            # 为每个图像动态生成 proposals 和 targets
             proposals = get_train_proposals_for_dataset(gt_boxes, self.cfg)
             target_labels, target_deltas = compute_targets_for_dataset(proposals, gt_boxes, gt_labels, self.cfg)
 
-            items_to_cache.append((proposals, target_labels, target_deltas))
+            if proposals.numel() > 0:
+                # 添加 batch index 形成 rois
+                batch_idx = torch.full((proposals.shape[0], 1), i, dtype=torch.float)
+                rois = torch.cat([batch_idx, proposals], dim=1)
+                all_proposals.append(rois)
+                all_target_labels.append(target_labels)
+                all_target_deltas.append(target_deltas)
 
-        torch.save(items_to_cache, cache_path)
-        print(f"Cache saved successfully to {cache_path}")
-        return items_to_cache
+        # 将整个 batch 的数据连接起来
+        final_rois = torch.cat(all_proposals, dim=0) if all_proposals else torch.empty(0, 5)
+        final_labels = torch.cat(all_target_labels, dim=0) if all_target_labels else torch.empty(0, dtype=torch.long)
+        final_deltas = torch.cat(all_target_deltas, dim=0) if all_target_deltas else torch.empty(0, 4)
 
-    def __len__(self):
-        return len(self.img_files)
-
-    def __getitem__(self, index):
-        # 图像加载和转换仍然在每次调用时进行
-        img_path = self.img_files[index]
-        img = cv2.imread(img_path)
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-
-        h, w, _ = img.shape
-        scale = self.cfg['img_size'] / max(h, w)
-        resized_h, resized_w = int(h * scale), int(w * scale)
-        img_resized = cv2.resize(img, (resized_w, resized_h))
-
-        new_img = np.zeros((self.cfg['img_size'], self.cfg['img_size'], 3), dtype=np.uint8)
-        new_img[0:resized_h, 0:resized_w] = img_resized
-        img_tensor = torch.from_numpy(new_img).permute(2, 0, 1).float() / 255.0
-        normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-        img_tensor = normalize(img_tensor)
-
-        # 直接从内存中的缓存加载proposals和targets
-        proposals, target_labels, target_deltas = self.cached_items[index]
-
-        return img_tensor, proposals, target_labels, target_deltas
-
-
-def collate_fn_fastrcnn(batch):
-    """为Fast R-CNN专门设计的collate_fn，处理带batch_index的rois"""
-    images, proposals, target_labels, target_deltas = zip(*batch)
-
-    images = torch.stack(images, dim=0)
-
-    rois = []
-    for i, p in enumerate(proposals):
-        if p.numel() > 0:
-            rois.append(torch.cat([torch.full((p.shape[0], 1), i, dtype=torch.float), p], dim=1))
-
-    rois = torch.cat(rois, dim=0) if rois else torch.empty(0, 5)
-    target_labels = torch.cat(target_labels, dim=0)
-    target_deltas = torch.cat(target_deltas, dim=0)
-
-    return images, rois, target_labels, target_deltas
-
-
-def get_dataloaders(cfg, data_info):
-    """创建训练和验证的DataLoader"""
-    train_dataset = CustomDataset(img_path=data_info['train'], cfg=cfg, is_train=True)
-    train_loader = DataLoader(train_dataset, batch_size=cfg['batch_size'], shuffle=True, collate_fn=collate_fn_fastrcnn,
-                              num_workers=cfg['num_workers'], pin_memory=True)
-
-    val_dataset = CustomDataset(img_path=data_info['val'], cfg=cfg, is_train=False)
-    val_loader = DataLoader(val_dataset, batch_size=cfg['batch_size'], shuffle=False, collate_fn=collate_fn_fastrcnn,
-                            num_workers=cfg['num_workers'], pin_memory=True)
-
-    return train_loader, val_loader
+        return images, final_rois, final_labels, final_deltas
 
 
 def apply_regression(boxes, deltas):
@@ -274,11 +171,10 @@ def convert_and_save_fp16(model_path, num_classes, output_path=None):
     print(f"\n--- Starting FP16 Conversion ---")
     print(f"Loading float32 weights from: {model_path}")
 
-    # 导入模型定义,需要确保 model.py 在PYTHONPATH中
     from model import FastRCNN
 
     # 加载模型结构并置于评估模式
-    model = FastRCNN(num_classes=num_classes, pretrained=False)
+    model = FastRCNN(num_classes=num_classes)
     model.load_state_dict(torch.load(model_path, map_location='cpu'))
     model.eval()
 
@@ -290,3 +186,34 @@ def convert_and_save_fp16(model_path, num_classes, output_path=None):
     print(f"Saving float16 model to: {output_path}")
     torch.save(model.state_dict(), output_path)
     print("Conversion complete!")
+
+@torch.inference_mode()
+def evaluate(model, val_loader, device, cfg):
+    """在验证集上评估模型"""
+    model.eval()
+    total_val_loss = 0.0
+    with torch.no_grad():
+        for images, rois, target_labels, target_deltas in val_loader:
+            images, rois, target_labels, target_deltas = \
+                images.to(device), rois.to(device), target_labels.to(device), target_deltas.to(device)
+
+            # 在验证时也使用 autocast，以匹配训练时的数值精度
+            with torch.amp.autocast(device_type='cuda', enabled=cfg['amp']):
+                scores, bbox_deltas = model(images, rois)
+                cls_loss = torch.nn.functional.cross_entropy(scores, target_labels)
+
+                pos_mask = (target_labels < (cfg['num_classes'] - 1))
+                num_pos = pos_mask.sum()
+
+                if num_pos > 0:
+                    # 注意：在获取回归损失的目标时，需要正确索引
+                    pred_deltas = bbox_deltas.view(-1, cfg['num_classes'], 4)[
+                        torch.arange(len(pos_mask)), target_labels]
+                    reg_loss = torch.nn.functional.smooth_l1_loss(
+                        pred_deltas[pos_mask], target_deltas[pos_mask], reduction='sum') / num_pos
+                else:
+                    reg_loss = torch.tensor(0.0, device=device)
+
+            total_val_loss += (cls_loss + reg_loss).item()
+
+    return total_val_loss / len(val_loader) if len(val_loader) > 0 else 0.0
