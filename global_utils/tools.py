@@ -46,7 +46,8 @@ def find_new_dir(dir_: str | Path) -> str | Path: #给定默认路径，寻找�
     else:
         raise TypeError('dir_ = str/Path')
 
-class WindowsSleepAvoider:
+class WindowsRouser:
+    """定时移动鼠标从而防止电脑休眠"""
     def __init__(self, delay:int=0, distance:int=20):
         self.delay:int = delay #每次移动鼠标的时间间隔(单位: 秒)
         self.distance:int = distance #鼠标移动的幅度(单位：像素)

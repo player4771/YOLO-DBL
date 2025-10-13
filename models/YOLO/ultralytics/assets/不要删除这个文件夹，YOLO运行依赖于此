@@ -1,0 +1,2 @@
+经查找，checks.py和benchmarks.py中均有代码使用
+checks.py会在训练正式开始前运行amp check时被调用，测试代码中使用了bus.jpg，所以这个文件(夹)的缺失会导致运行出错。

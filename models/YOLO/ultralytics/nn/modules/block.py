@@ -53,7 +53,8 @@ __all__ = (
     "HyperACE", 
     "DownsampleConv", 
     "FullPAD_Tunnel",
-    "DSC3k2"
+    "DSC3k2",
+    "C3k", #add
 )
 
 
@@ -1076,6 +1077,7 @@ class C2fPSA(C2f):
         """Initializes the C2fPSA module, a variant of C2f with PSA blocks for enhanced feature extraction."""
         assert c1 == c2
         super().__init__(c1, c2, n=n, e=e)
+        super().__init__(c1, c2, n=n, e=e)
         self.m = nn.ModuleList(PSABlock(self.c, attn_ratio=0.5, num_heads=self.c // 64) for _ in range(n))
 
 
@@ -1175,7 +1177,8 @@ try:
         logger.warning("FlashAttention is not available on this device. Using scaled_dot_product_attention instead.")
 except Exception:
     from torch.nn.functional import scaled_dot_product_attention as sdpa
-    logger.warning("FlashAttention is not available on this device. Using scaled_dot_product_attention instead.")
+    #烦死个人
+    #logger.warning("FlashAttention is not available on this device. Using scaled_dot_product_attention instead.")
 
 class AAttn(nn.Module):
     """

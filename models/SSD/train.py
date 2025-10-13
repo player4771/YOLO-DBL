@@ -10,7 +10,7 @@ from torchvision.models.detection.anchor_utils import DefaultBoxGenerator
 
 from backbone import ResNetBackbone
 from global_utils import (EarlyStopping, YoloDataset, AlbumentationsTransform,
-                          find_new_dir, evaluate, convert_to_coco_api, WindowsSleepAvoider)
+                          find_new_dir, evaluate, convert_to_coco_api, WindowsRouser)
 
 def create_model(backbone:str='vgg16', num_classes:int=4): # -> model
     if backbone == "vgg16":
@@ -138,7 +138,7 @@ def train(**kwargs):
     warmup_scheduler = torch.optim.lr_scheduler.LinearLR(optimizer, start_factor=1e-3, total_iters=warmup_iters)
     coco_gt = convert_to_coco_api(val_loader.dataset)
 
-    fucker = WindowsSleepAvoider(delay=600, distance=200)
+    fucker = WindowsRouser(delay=300, distance=200)
     fucker.start()
 
     for epoch in range(cfg['epochs']):

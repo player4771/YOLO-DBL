@@ -69,7 +69,7 @@ from ultralytics.nn.modules import (
     HyperACE,
     DownsampleConv,
     FullPAD_Tunnel,
-    DSC3k2
+    DSC3k2,
 )
 from ultralytics.utils import DEFAULT_CFG_DICT, DEFAULT_CFG_KEYS, LOGGER, colorstr, emojis, yaml_load
 from ultralytics.utils.checks import check_requirements, check_suffix, check_yaml
@@ -93,6 +93,13 @@ from ultralytics.utils.torch_utils import (
     time_sync,
 )
 
+from .modules.FFCA_YOLO import SCAM, FFM_Concat2, FFM_Concat3, FEM
+from .modules.PCPE_YOLO_C2f_IG import C2f_PIG
+from .modules.PCPE_YOLO_CAA import CAA
+from .modules.PCPE_YOLO_EUCB import EUCB
+from .modules.IRSTD_YOLO import *
+from .modules.YOLO_RACE import *
+from .modules.YOLO_EMAC import *
 
 class BaseModel(nn.Module):
     """The BaseModel class serves as a base class for all the models in the Ultralytics YOLO family."""
@@ -1003,7 +1010,17 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             C2fCIB,
             A2C2f,
             DSC3k2,
-            DSConv
+            DSConv,
+            FEM, #FFCA-YOLO
+            C2f_PIG, #PCPE-YOLO
+            C3k2_EFE, #IRSTD-YOLO x2
+            SPDConv,
+            CARAFE, #YOLO-RACE x2
+            ResBlock_CBAM,
+            C2f_ScConv, #YOLO-EMAC x4
+            #C3k2_ScConv,
+            M2C2f,
+            C3k2_EAMC,
         }:
             c1, c2 = ch[f], args[0]
             if c2 != nc:  # if c2 not equal to number of classes (i.e. for Classify() output)
@@ -1031,7 +1048,14 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
                 C2fCIB,
                 C2PSA,
                 A2C2f,
-                DSC3k2
+                DSC3k2,
+                C2f_PIG, #PCPE-YOLO
+                C3k2_EFE, #IRSTD-YOLO x2
+                SPDConv,
+                C2f_ScConv, #YOLO-EMAC
+                #C3k2_ScConv,
+                M2C2f,
+                C3k2_EAMC,
             }:
                 args.insert(2, n)  # number of repeats
                 n = 1
@@ -1095,6 +1119,18 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
                 c2 =c1
         elif m is FullPAD_Tunnel:
             c2 = ch[f[0]]
+        elif m in [SCAM, Multibranch]:
+            c2 = ch[f]
+            args = [c2]
+        elif m is FFM_Concat2:
+            c2 = sum(ch[x] for x in f)
+            args = [args[0], c2 // 2, c2 // 2]
+        elif m is FFM_Concat3:
+            c2 = sum(ch[x] for x in f)
+            args = [args[0], c2 // 4, c2 // 2, c2 // 4]
+        elif m in [CAA, EUCB]:
+            c2 = ch[f]
+            args = [c2, *args]
         else:
             c2 = ch[f]
 
