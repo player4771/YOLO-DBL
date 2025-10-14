@@ -57,8 +57,10 @@ class WindowsRouser:
     def trigger(self):
         """移动一次鼠标.\n
         偶数次时右移, 否则左移. 用时固定为0.5秒"""
-        offset = self.distance if self.count % 2 == 0 else -self.distance
-        pg.move(xOffset=offset, yOffset=0, duration=0.5)
+        if self.count % 2 == 0:
+            pg.press('volumeup')
+        else:
+            pg.press('volumedown')
         self.count += 1
 
     def loop(self):

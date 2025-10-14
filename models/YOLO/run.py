@@ -6,13 +6,6 @@ from ultralytics import YOLO
 
 from global_utils import WindowsRouser
 
-def nan_stop(trainer):
-    loss = trainer.loss
-    box_loss = trainer.metrics.get('train/box_loss')
-    if loss is not None and torch.isnan(loss):
-        print(f"Early stop triggered.\n"
-              f"lr={trainer.optimizer.param_groups[0]["lr"]}, loss={loss}, box_loss={box_loss}")
-        trainer.stop = True
 
 def train(model:str, data:str):
     rouser = WindowsRouser(delay=300, distance=200)
@@ -20,13 +13,11 @@ def train(model:str, data:str):
 
     model = YOLO(model)
 
-    #model.add_callback('on_train_epoch_end', nan_stop)
-
     # Train the model
     results = model.train(
         data=data,
         project='./runs',
-        epochs=100,
+        epochs=300,
         batch=8, # -1:显存利用率60%;0-1:指定显存利用率
         workers=4,
         imgsz=640,
