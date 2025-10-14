@@ -138,7 +138,7 @@ def train(**kwargs):
     warmup_scheduler = torch.optim.lr_scheduler.LinearLR(optimizer, start_factor=1e-3, total_iters=warmup_iters)
     coco_gt = convert_to_coco_api(val_loader.dataset)
 
-    fucker = WindowsRouser(delay=300, distance=200)
+    fucker = WindowsRouser()
     fucker.start()
 
     for epoch in range(cfg['epochs']):

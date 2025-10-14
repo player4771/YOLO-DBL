@@ -1,7 +1,8 @@
-
+import time
 
 from global_utils import WindowsRouser
 
 if __name__ == '__main__':
-    rouser = WindowsRouser(delay=10, distance=200)
+    rouser = WindowsRouser()
     rouser.start()
+    time.sleep(1000)

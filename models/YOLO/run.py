@@ -8,7 +8,7 @@ from global_utils import WindowsRouser
 
 
 def train(model:str, data:str):
-    rouser = WindowsRouser(delay=300, distance=200)
+    rouser = WindowsRouser()
     rouser.start()
 
     model = YOLO(model)

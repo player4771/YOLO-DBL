@@ -1,8 +1,8 @@
 import re
 import time
 import torch
+import ctypes
 import threading
-import pyautogui as pg
 from pathlib import Path
 
 def get_dataloader(cfg:dict, dataset, transform, is_train:bool, collate_fn): # -> dataloader
@@ -47,44 +47,23 @@ def find_new_dir(dir_: str | Path) -> str | Path: #给定默认路径，寻找�
         raise TypeError('dir_ = str/Path')
 
 class WindowsRouser:
-    """定时移动鼠标从而防止电脑休眠"""
-    def __init__(self, delay:int=0, distance:int=20):
-        self.delay:int = delay #每次移动鼠标的时间间隔(单位: 秒)
-        self.distance:int = distance #鼠标移动的幅度(单位：像素)
-        self.count:int = 0 #计数，统计当前为第几次触发
-        self.running:bool = False #是否启动
+    """防止电脑休眠"""
+    def __init__(self, time:float=None):
+        self.time:float = time #定时关闭(单位: 秒)
+        self.activated:bool = False #仅用于标记是否在运行中
 
-    def trigger(self):
-        """移动一次鼠标.\n
-        偶数次时右移, 否则左移. 用时固定为0.5秒"""
-        if self.count % 2 == 0:
-            pg.press('volumeup')
-        else:
-            pg.press('volumedown')
-        self.count += 1
-
-    def loop(self):
-        while self.running:
-            self.trigger()
-            time_int = self.delay // 1 #整数部分
-            time_dec = self.delay - time_int #小数部分
-            for i in range(time_int):
-                if self.running: #保证及时响应
-                    time.sleep(1)
-            time.sleep(time_dec)
-
-    def start(self, interval:float=None):
-        self.running = True
-        th = threading.Thread(target=self.loop, name="WSA(running)")
-        th.start()
-        if interval:
-            threading.Timer(
-                interval,
-                lambda:setattr(self, 'running', False)
-            ).start()
+    def start(self):
+        # prevent
+        ctypes.windll.kernel32.SetThreadExecutionState(0x80000002)
+        self.activated = True
+        if self.time:
+            #time后自动触发stop
+            threading.Timer(self.time, self.stop)
 
     def stop(self):
-        self.running = False
+        # set back to normal
+        ctypes.windll.kernel32.SetThreadExecutionState(0x80000000)
+        self.activated = False
 
 def this_time() -> str:
     return time.strftime('%Y/%m/%d %H:%M:%S', time.localtime())
