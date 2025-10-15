@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from ultralytics.nn.modules.conv import Conv, autopad
+from ..modules.conv import Conv, autopad
 
 __all__ = (
     'SCAM',

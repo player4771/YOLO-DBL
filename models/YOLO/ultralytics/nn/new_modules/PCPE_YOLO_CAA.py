@@ -1,7 +1,7 @@
 import torch.nn as nn
 import torch
 
-from .conv import Conv
+from ..modules.conv import Conv
 
 class CAA(nn.Module):
     def __init__(self, ch, h_kernel_size=11, v_kernel_size=11) -> None:

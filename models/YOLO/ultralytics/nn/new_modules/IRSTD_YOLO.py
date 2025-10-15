@@ -1,8 +1,9 @@
 import torch
 import torch.nn as nn
 import numpy as np
-from .conv import Conv
-from .block import C3k, C3k2
+
+from ..modules.conv import Conv
+from ..modules.block import C3k, C3k2
 
 __all__ = ['C3k2_EFE', 'SPDConv', 'Multibranch']
 ###################################################### C3k2-EFE start #########################################################################

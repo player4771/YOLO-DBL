@@ -5,7 +5,7 @@ import math
 import pywt
 import pywt.data
 
-from .conv import autopad, Conv
+from ..modules.conv import autopad, Conv
 
 class C2f(nn.Module):
     """Faster Implementation of CSP Bottleneck with 2 convolutions."""

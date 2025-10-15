@@ -69,7 +69,7 @@ from ultralytics.nn.modules import (
     HyperACE,
     DownsampleConv,
     FullPAD_Tunnel,
-    DSC3k2,
+    DSC3k2
 )
 from ultralytics.utils import DEFAULT_CFG_DICT, DEFAULT_CFG_KEYS, LOGGER, colorstr, emojis, yaml_load
 from ultralytics.utils.checks import check_requirements, check_suffix, check_yaml
@@ -93,13 +93,8 @@ from ultralytics.utils.torch_utils import (
     time_sync,
 )
 
-from .modules.FFCA_YOLO import SCAM, FFM_Concat2, FFM_Concat3, FEM
-from .modules.PCPE_YOLO_C2f_IG import C2f_PIG
-from .modules.PCPE_YOLO_CAA import CAA
-from .modules.PCPE_YOLO_EUCB import EUCB
-from .modules.IRSTD_YOLO import *
-from .modules.YOLO_RACE import *
-from .modules.YOLO_EMAC import *
+from .new_modules import * # new modules (from __init__.py)
+
 
 class BaseModel(nn.Module):
     """The BaseModel class serves as a base class for all the models in the Ultralytics YOLO family."""
@@ -1131,6 +1126,10 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
         elif m in [CAA, EUCB]:
             c2 = ch[f]
             args = [c2, *args]
+        elif m is DySample:
+            c1 = ch[f]
+            c2 = c1
+            args = [c1, *args]
         else:
             c2 = ch[f]
 

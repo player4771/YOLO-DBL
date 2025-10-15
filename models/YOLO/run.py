@@ -43,5 +43,5 @@ def val(model, data:str):
 if __name__ == '__main__':
     data_yaml = "E:/Projects/Datasets/tea_leaf_diseases/data.yaml"
 
-    model, _ = train('YOLO-EMAC.yaml', data_yaml)
+    model, _ = train('YOLOv13_edit.yaml', data_yaml)
     #val(model, data_yaml)

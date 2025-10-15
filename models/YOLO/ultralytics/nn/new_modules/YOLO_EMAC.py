@@ -4,8 +4,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .conv import Conv
-from .block import Bottleneck, C2f, C3k
+from ..modules.conv import Conv
+from ..modules.block import Bottleneck, C2f, C3k
 
 
 class GroupBatchnorm2d(nn.Module):

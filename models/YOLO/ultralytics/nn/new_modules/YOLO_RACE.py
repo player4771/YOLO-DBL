@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from ultralytics.nn.modules import CBAM
+from ..modules import CBAM
 
 
 class CARAFE(nn.Module):
