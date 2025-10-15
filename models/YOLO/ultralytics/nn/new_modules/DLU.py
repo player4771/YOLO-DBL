@@ -3,52 +3,90 @@ import torch.nn as nn
 import torch.nn.functional as F
 from mmengine.model import xavier_init, normal_init
 
-def carafe(features, masks, kernel_size, group_size, scale_factor):
-    """
-    CARAFE 算子的纯 PyTorch 实现。如有可能可以编译为CUDA算子
 
+def carafe(features, masks, kernel_size, up_factor):
+    """
+    使用 unfold + matmul 的逻辑来实现特征重组。
     Args:
-        features (Tensor): 输入特征图, shape (N, C, H, W)
-        masks (Tensor): 预测的上采样核, shape (N, G*k*k, H_out, W_out)
-        kernel_size (int): 重组核的大小 (k_up)
-        group_size (int): 分组数 (G)
-        scale_factor (int): 上采样倍率 (σ)
+        features (Tensor): 低分辨率输入特征图, (N, C, H, W)
+        masks (Tensor): 预测的上采样核, (N, k*k, H_out, W_out)
+        kernel_size (int): 重组核的大小 (k)
+        up_factor (int): 上采样倍率 (σ)
 
     Returns:
-        Tensor: 上采样后的特征图
+        Tensor: 高分辨率输出特征图
     """
-    N, C, H, W = features.shape
-    H_out, W_out = H * scale_factor, W * scale_factor
+    N, C, H, W = features.size()
 
-    if C % group_size != 0:
-        raise ValueError(f'输入通道数 {C} 必须能被分组数 {group_size} 整除')
+    # --- 1. 准备上采样核 (masks) ---
+    # 将 masks 变形以适应 matmul
+    kernel_tensor = masks.unfold(2, up_factor, step=up_factor)
+    kernel_tensor = kernel_tensor.unfold(3, up_factor, step=up_factor)
+    kernel_tensor = kernel_tensor.reshape(N, kernel_size ** 2, H, W, up_factor ** 2)
+    kernel_tensor = kernel_tensor.permute(0, 2, 3, 1, 4)  # 最终形状: (N, H, W, k*k, σ*σ)
 
+    # --- 2. 准备输入特征 (features) ---
+    x = F.pad(features, pad=(kernel_size // 2, kernel_size // 2, kernel_size // 2, kernel_size // 2),
+              mode='constant', value=0)
+    x = x.unfold(2, kernel_size, step=1)
+    x = x.unfold(3, kernel_size, step=1)
+    x = x.reshape(N, C, H, W, -1)
+    x = x.permute(0, 2, 3, 1, 4)  # 最终形状: (N, H, W, C, k*k)
+
+    # --- 3. 执行特征重组 ---
+    # (N, H, W, C, k*k) @ (N, H, W, k*k, σ*σ) -> (N, H, W, C, σ*σ)
+    out_tensor = torch.matmul(x, kernel_tensor)
+
+    # --- 4. 将输出重组为图像格式 ---
+    out_tensor = out_tensor.reshape(N, H, W, -1)
+    out_tensor = out_tensor.permute(0, 3, 1, 2)
+    out_tensor = F.pixel_shuffle(out_tensor, up_factor)
+
+    return out_tensor
+
+def carafe2(features, masks, kernel_size, group_size, up_factor):
+    """
+    将 group_size 参数添加回 unfold + matmul 实现中。
+    group_size (分组数) 的作用是将输入特征图的通道 (Channels) 分成若干个独立的组，然后为每一组分别进行内容感知的特征重组。
+    """
+    N, C, H, W = features.size()
+
+    # 检查通道数是否能被分组整除
+    assert C % group_size == 0, f'输入通道数 {C} 必须能被分组数 {group_size} 整除'
     C_g = C // group_size  # 每个组的通道数
 
-    # 使用 F.unfold 高效地提取滑动的局部块 (patches)
-    unfolded_features = F.unfold(
-        features,
-        kernel_size=kernel_size,
-        padding=(kernel_size - 1) // 2
-    )
-    unfolded_features = unfolded_features.view(
-        N, group_size, C_g, kernel_size * kernel_size, H, W
-    )
+    # --- 1. 准备上采样核 (masks) ---
+    # masks 的输入形状假定为 (N, G * k*k, H_out, W_out), 将其 reshape 以便后续处理
+    masks = masks.view(N, group_size, kernel_size ** 2, H * up_factor, W * up_factor)
 
-    # 为输出图的每个位置找到对应的输入块
-    h_idx = torch.arange(H_out, device=features.device) // scale_factor
-    w_idx = torch.arange(W_out, device=features.device) // scale_factor
+    kernel_tensor = masks.unfold(3, up_factor, step=up_factor)  # 在 H_out 维度上 unfold
+    kernel_tensor = kernel_tensor.unfold(4, up_factor, step=up_factor)  # 在 W_out 维度上 unfold
+    # -> (N, G, k*k, H, W, σ, σ)
+    kernel_tensor = kernel_tensor.reshape(N, group_size, kernel_size ** 2, H, W, up_factor ** 2)
+    # -> (N, G, H, W, k*k, σ*σ)
+    kernel_tensor = kernel_tensor.permute(0, 1, 3, 4, 2, 5)
 
-    selected_features = unfolded_features[:, :, :, :, h_idx, :][:, :, :, :, :, w_idx]
+    # --- 2. 准备输入特征 (features) ---
+    features = features.view(N, group_size, C_g, H, W)# 将 features 分组
 
-    # 特征重组 (内积操作)
-    masks = masks.view(N, group_size, kernel_size * kernel_size, H_out, W_out).unsqueeze(2)
+    x = F.pad(features, (kernel_size//2,kernel_size//2,kernel_size//2,kernel_size//2), 'constant', 0)
+    x = x.unfold(3, kernel_size, step=1)  # 在 H 维度上 unfold
+    x = x.unfold(4, kernel_size, step=1)  # 在 W 维度上 unfold
+    # -> (N, G, Cg, H, W, k, k)
+    x = x.reshape(N, group_size, C_g, H, W, -1)
+    # -> (N, G, H, W, Cg, k*k)
+    x = x.permute(0, 1, 3, 4, 2, 5)
 
-    reassembled_features = selected_features * masks
-    output = torch.sum(reassembled_features, dim=3)
+    # --- 3. 执行特征重组 ---
+    # (N, G, H, W, Cg, k*k) @ (N, G, H, W, k*k, σ*σ) -> (N, G, H, W, Cg, σ*σ)
+    out_tensor = torch.matmul(x, kernel_tensor)
 
-    return output.view(N, C, H_out, W_out)
+    # --- 4. 将输出重组为图像格式 ---
+    # (N, G, H, W, Cg, σ*σ) -> (N, G, Cg, σ*σ, H, W) -> (N, C, H, W, σ*σ) -> (N, C, H, up_factor, W, up_factor)
+    out_tensor = out_tensor.permute(0, 1, 4, 2, 3, 5).reshape(N, C*up_factor**2, H, W)
+    out_tensor = F.pixel_shuffle(out_tensor, up_factor)
 
+    return out_tensor
 
 class DLUPack(nn.Module):
     """
@@ -141,7 +179,8 @@ class DLUPack(nn.Module):
         return mask_
 
     def feature_reassemble(self, x, mask):
-        x = carafe(x, mask, self.up_kernel, self.up_group, self.scale_factor)
+        #x = carafe(x, mask, self.up_kernel, self.scale_factor)
+        x = carafe2(x, mask, self.up_kernel, self.up_group, self.scale_factor)
         return x
 
     def forward(self, x):
