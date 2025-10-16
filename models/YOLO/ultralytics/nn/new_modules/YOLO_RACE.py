@@ -1,3 +1,5 @@
+#https://www.webofscience.com/wos/woscc/full-record/WOS:001474338300001
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -50,7 +52,7 @@ class CARAFE(nn.Module):
         # print("up shape:",out_tensor.shape)
         return out_tensor
 
-class CARAFE2(nn.Module):
+class CARAFE_simplified(nn.Module):
     """
     CARAFE的简化版\n
     实现比较简洁，但内存占用缺少优化，输入尺寸极大是(如2x64x512x512)会导致CUDA内存不足\n
@@ -68,7 +70,7 @@ class CARAFE2(nn.Module):
         Returns:
             X: The upsampled feature map.
         """
-        super(CARAFE2, self).__init__()
+        super(CARAFE_simplified, self).__init__()
         self.scale = scale
 
         self.comp = Conv(c, c_mid)
@@ -93,6 +95,7 @@ class CARAFE2(nn.Module):
 
         X = torch.einsum('bkhw,bckhw->bchw', [W, X])  # b * c * h_ * w_
         return X
+
 
 class ResBlock_CBAM(nn.Module):
     def __init__(self, in_places, places, stride=1, downsampling=False, expansion=1):

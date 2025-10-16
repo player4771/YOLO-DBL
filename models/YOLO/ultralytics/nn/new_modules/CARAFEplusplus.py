@@ -12,7 +12,7 @@ class CARAFEplusplus(nn.Module):
 
     def __init__(self,
                  in_channels: int,
-                 scale_factor: int,
+                 scale_factor: int = 2,
                  up_down_type: str = 'up',
                  k_encoder: int = 3,
                  k_reassembly: int = 5):

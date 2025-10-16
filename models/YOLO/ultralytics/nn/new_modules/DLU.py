@@ -105,7 +105,7 @@ class DLUPack(nn.Module):
 
     def __init__(self,
                  channels,
-                 scale_factor,
+                 scale_factor=2,
                  up_kernel=5,
                  up_group=1,
                  encoder_kernel=3,
