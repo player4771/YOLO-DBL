@@ -26,7 +26,7 @@ def train(model:str, data:str):
         mixup=0.05,  # S:0.05; L:0.15; X:0.2
         copy_paste=0.15,  # S:0.15; L:0.5; X:0.6
         device="cuda",
-        lr0=1e-3,  # n:1e-4, s:1e-3 optimizer=auto时会被忽略
+        #lr0=1e-3,  # n:1e-4, s:1e-3 optimizer=auto时会被忽略
         lrf=1e-2,
         patience=10,
         cos_lr=True
