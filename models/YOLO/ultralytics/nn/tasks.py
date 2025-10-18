@@ -93,7 +93,8 @@ from ultralytics.utils.torch_utils import (
     time_sync,
 )
 
-from .new_modules import * # new modules (from __init__.py)
+from .modules_upsample import * # upsample modules
+from .modules_attention import * # attention modules
 
 
 class BaseModel(nn.Module):
