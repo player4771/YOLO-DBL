@@ -4,6 +4,7 @@ import torch
 import ctypes
 import threading
 from pathlib import Path
+from numpy.random import randint
 
 def get_dataloader(cfg:dict, dataset, transform, is_train:bool, collate_fn): # -> dataloader
     """
@@ -47,7 +48,8 @@ def find_new_dir(dir_: str | Path) -> str | Path: #给定默认路径，寻找�
         raise TypeError('dir_ = str/Path')
 
 class WindowsRouser:
-    """防止电脑休眠"""
+    """防止电脑休眠\n
+    TODO:改为全局方法？"""
     def __init__(self, time:float=None):
         self.time:float = time #定时关闭(单位: 秒)
         self.activated:bool = False #仅用于标记是否在运行中
@@ -67,3 +69,30 @@ class WindowsRouser:
 
 def this_time() -> str:
     return time.strftime('%Y/%m/%d %H:%M:%S', time.localtime())
+
+def typename(class_):
+    #如: <class 'ultralytics.nn.modules_attention.BiFormer.biformer.BiFormer'> -> BiFormer
+    return re.search(r"<class '.*\.(.*)'>", str(type(class_))).group(1)
+
+def avg_time(module, *args, repeat=10):
+    result = module(*args)  # 运行一下，忽略编译时间
+    torch.cuda.synchronize()
+    start_time = time.perf_counter()
+    for i in range(repeat):
+        module(*args)
+    torch.cuda.synchronize()
+    total_time = time.perf_counter() - start_time
+    return total_time, result
+
+def check(module, *args, repeat=10, log=True, adjust=25):
+    print(f"{typename(module)}:".ljust(adjust), end='')
+    total_time, result = avg_time(module, *args, repeat=repeat)
+    if log:
+        try:
+            print(f"-> {result.shape},".ljust(40), f"{total_time/repeat:.16f}s")
+        except:
+            print(f"-> {type(result)},".ljust(40), f"{total_time/repeat:.16f}s")
+    return total_time/repeat, result
+
+def rand_rgb():
+    return randint(0, 256), randint(0, 256), randint(0, 256)

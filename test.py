@@ -1,65 +1,46 @@
-import re
-import time
 import torch
 
+from ultralytics.nn.modules import *
 from ultralytics.nn.modules_upsample import *
 from ultralytics.nn.modules_attention import *
 
-def class_name(class_):
-    #如: <class 'ultralytics.nn.modules_attention.BiFormer.biformer.BiFormer'> -> BiFormer
-    return re.search(r"<class '.*\.(.*)'>", str(type(class_))).group(1)
+from global_utils import check, label_image_tea
 
-def check(module, *args, repeat=10, log=True):
-    result = module(*args)  # 运行一下，忽略编译时间
-    torch.cuda.synchronize()
-    start_time = time.perf_counter()
-    for i in range(repeat):
-        module(*args)
-    torch.cuda.synchronize()
-    total_time = time.perf_counter() - start_time
-    if log:
-        print(f"{class_name(module)}: {total_time:.4f}s, result:{result}")
-    return total_time, result
-
-def meantime(module, *args, repeat=10, log=True, adjust=25):
-    print(f"{class_name(module)}:".ljust(adjust), end='')
-    total_time, result = check(module, *args, repeat=repeat, log=False)
-    if log:
-        try:
-            print(f"-> {result.shape},".ljust(40), f"{total_time/repeat}s")
-        except:
-            print("-> [Unknown result],".ljust(40), f"{total_time/repeat}s")
-    return total_time/repeat, result
-
-def upsample_test():
+def upsample_test(in_channels:int=64, size:int=256):
     # N(batch size), C(channels), H(height), W(width)
-    in_channels = 64
-    size = 256
     x = torch.rand(2, in_channels, size, size).to('cuda')
     y = torch.rand(2, in_channels, size * 2, size * 2).to('cuda')
 
-    #meantime(torch.nn.Upsample(scale_factor=2), x)
-    meantime(CARAFE(in_channels, in_channels).to('cuda'), x)
-    meantime(DLUPack(in_channels).to('cuda'), x)
-    #meantime(CARAFEplusplus(in_channels).to('cuda'), x)
-    #meantime(DySample(in_channels).to('cuda'), x)
-    #meantime(EUCB(in_channels, in_channels).to('cuda'), x)
-    #meantime(MEUM(in_channels).to('cuda'), x)
-    #meantime(CARAFEPack(in_channels).to('cuda'), x)
-    meantime(SAPA(in_channels).to('cuda'), y, x)
-    #meantime(FGA(64, out_dim=64, upscale=2).to('cuda'), x)
+    modules = {
+        torch.nn.Upsample(scale_factor=2): x,
+        CARAFE(in_channels, in_channels): x,
+        DLUPack(in_channels): x,
+        CARAFEplusplus(in_channels): x,
+        DySample(in_channels): x,
+        EUCB(in_channels, in_channels): x,
+        MEUM(in_channels): x,
+        CARAFEPack(in_channels): x,
+        SAPA(in_channels): (y, x),
+        FGA(64, upscale=2): x,
+    }
 
-def attention_test():
-    in_channels = 64
-    size = 256
+    for module, input in modules.items():
+        if input is not None:
+            if not isinstance(input, tuple):
+                check(module.to('cuda'), input)
+            else:
+                check(module.to('cuda'), *input)
+
+
+def attention_test(in_channels:int=64, size:int=256):
     x_nchw = torch.rand(4, in_channels, size, size).to('cuda')
     x_nhwc = x_nchw.permute(0, 2, 3, 1).to('cuda')
 
     modules = {# <module: input>, None代表可以运行，但会爆显存
+        CBAM(in_channels): x_nchw,
         biformer(in_channels=in_channels, model_size='tiny'): x_nchw,
         biformer(in_channels=in_channels, model_size='small'): x_nchw,
         biformer(in_channels=in_channels, model_size='base'): x_nchw,
-        BiLevelRoutingAttention(in_channels,n_win=8): None, #x_nhwc,
         DAT(in_chans=in_channels): None,
         BAM(in_channels): x_nchw,
         CoordAttention(in_channels, in_channels): x_nchw,
@@ -82,7 +63,8 @@ def attention_test():
 
     for module, input in modules.items():
         if input is not None:
-            meantime(module.to('cuda'), input)
+            check(module.to('cuda'), input)
 
 if __name__ == '__main__':
-    attention_test()
+    img_file = r"E:\Projects\Datasets\tea_leaf_diseases_v4\train\images\IMG_20230612_151845_jpg.rf.f66a145758c7c6dd4c6ac816c813601a.jpg"
+    label_image_tea(img_file)
