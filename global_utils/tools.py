@@ -50,8 +50,8 @@ def find_new_dir(dir_: str | Path) -> str | Path: #给定默认路径，寻找�
 class WindowsRouser:
     """防止电脑休眠\n
     TODO:改为全局方法？"""
-    def __init__(self, time:float=None):
-        self.time:float = time #定时关闭(单位: 秒)
+    def __init__(self, autostop:float=None):
+        self.time:float = autostop #定时关闭(单位: 秒)，None为禁用
         self.activated:bool = False #仅用于标记是否在运行中
 
     def start(self):

@@ -1,7 +1,7 @@
 
 from .analyze import *
 from .dataset import *
-from .early_stopping import *
+from .train_utils import *
 from .tools import *
 from .transforms import *
 from .coco import *

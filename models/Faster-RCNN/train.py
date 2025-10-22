@@ -8,7 +8,7 @@ torch.backends.cudnn.benchmark = True
 torch.backends.cuda.matmul.allow_tf32 = True
 
 from global_utils import (YoloDataset, EarlyStopping, AlbumentationsTransform,
-                          find_new_dir, evaluate, convert_to_coco_api)
+                          find_new_dir, coco_evaluate, convert_to_coco_api)
 
 def create_model(backbone='resnet50', num_classes=4, **kwargs):
     models = {
@@ -94,7 +94,7 @@ def train(**kwargs):
     params = [p for p in model.parameters() if p.requires_grad]
     optimizer = torch.optim.AdamW(params, lr=cfg['lr'], weight_decay=cfg['weight_decay'])
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=cfg['epochs'], eta_min=cfg['lr'] * cfg['lf'])
-    early_stopper = EarlyStopping(patience=cfg['patience'], delta=cfg['delta'], path=str(output_dir/'best.pth'))
+    early_stopper = EarlyStopping(patience=cfg['patience'], delta=cfg['delta'], outfile=str(output_dir / 'best.pth'))
     warmup_iters = cfg['warmup_epochs'] * len(train_loader)
     warmup_scheduler = torch.optim.lr_scheduler.LinearLR(optimizer, start_factor=1e-3, total_iters=warmup_iters)
     coco_gt = convert_to_coco_api(val_loader.dataset)
@@ -124,7 +124,7 @@ def train(**kwargs):
         if epoch >= cfg['warmup_epochs']:
             scheduler.step()
 
-        coco_eval = evaluate(model, val_loader, device, coco_gt=coco_gt, outfile=results_file)
+        coco_eval = coco_evaluate(model, val_loader, device, coco_gt=coco_gt, outfile=results_file)
         mAP = coco_eval.stats[0] if coco_eval else 0.0
 
         early_stopper.update(mAP, model)

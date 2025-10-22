@@ -1,16 +1,13 @@
 import yaml
 import torch
 import torchvision
-from tqdm import tqdm
-from pathlib import Path
-from datetime import datetime
+
 torch.hub.set_dir('./') #修改缓存路径
 torch.backends.cudnn.benchmark=True
 from torchvision.models.detection.anchor_utils import DefaultBoxGenerator
 
 from backbone import ResNetBackbone
-from global_utils import (EarlyStopping, YoloDataset, AlbumentationsTransform,
-                          find_new_dir, evaluate, convert_to_coco_api, WindowsRouser)
+from global_utils import YoloDataset, AlbumentationsTransform, Trainer
 
 def create_model(backbone:str='vgg16', num_classes:int=4): # -> model
     if backbone == "vgg16":
@@ -31,7 +28,7 @@ def create_model(backbone:str='vgg16', num_classes:int=4): # -> model
         # 创建 Anchor Generator
         # SSD300 使用 6 个特征图，每个特征图的 anchor 数量
         num_anchors = [4, 6, 6, 6, 4, 4]
-        anchor_generator = torchvision.models.detection.anchor_utils.DefaultBoxGenerator(
+        anchor_generator = DefaultBoxGenerator(
             aspect_ratios=[[2], [2, 3], [2, 3], [2, 3], [2], [2]],
         )
 
@@ -86,96 +83,19 @@ def train(**kwargs):
         cfg['dataset'] = yaml.load(infile, Loader=yaml.FullLoader)
 
     num_classes = cfg['dataset']['nc'] + 1 # +1 是因为 SSD 需要一个背景类
-    device = torch.device(cfg['device'])
-    output_dir = find_new_dir(Path(cfg['project'], cfg['name']))
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    cfg['start_time'] = datetime.now().strftime("%Y/%m/%d %H:%M:%S")
-
-    with open(output_dir/'args.yaml', 'w') as outfile:
-        yaml.dump(cfg, outfile)
-
-    data_root = Path(cfg['data']).parent
-    train_img_dir = data_root / cfg['dataset']['train']
-    val_img_dir = data_root / cfg['dataset']['val']
-    train_label_dir = train_img_dir.parent / 'labels'
-    val_label_dir = val_img_dir.parent / 'labels'
-    results_file = output_dir / 'results.csv'
-
-    # 创建 Dataset
-    dataset_train = YoloDataset(
-        img_dir=train_img_dir, label_dir=train_label_dir,
-        transform=AlbumentationsTransform(is_train=True, size=300)
-    )
-    dataset_val = YoloDataset(
-        img_dir=val_img_dir, label_dir=val_label_dir,
-        transform=AlbumentationsTransform(is_train=False, size=300)
-    )
-
-    # 创建 DataLoader
-    train_loader = torch.utils.data.DataLoader(
-        dataset_train, batch_size=cfg['batch_size'], num_workers=cfg['num_workers'],
-        pin_memory=True, shuffle=True, persistent_workers=True,
-        collate_fn=collate_fn
-    )
-    val_loader = torch.utils.data.DataLoader(
-        dataset_val, batch_size=cfg['batch_size'], num_workers=cfg['num_workers'],
-        pin_memory=True, shuffle=False, persistent_workers=True,
-        collate_fn=collate_fn
-    )
-
     model = create_model(backbone=cfg['backbone'], num_classes=num_classes)
-    model.to(device)
+    transform_train = AlbumentationsTransform(is_train=True, size=300)
+    transform_val = AlbumentationsTransform(is_train=False, size=300)
 
-    scaler = torch.amp.GradScaler()
-    params = [p for p in model.parameters() if p.requires_grad]
-    #optimizer = SGD(params, lr=cfg['lr'], momentum=0.9, weight_decay=cfg['weight_decay'])
-    optimizer = torch.optim.AdamW(params, lr=cfg['lr'], weight_decay=cfg['weight_decay'])
-    #scheduler = lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=cfg['epochs'], eta_min=cfg['lr'] * cfg['lf'])
-    early_stopper = EarlyStopping(patience=cfg['patience'], verbose=True, path=str(output_dir/'best.pth'))
-    warmup_iters = cfg['warmup_epochs']*len(train_loader)
-    warmup_scheduler = torch.optim.lr_scheduler.LinearLR(optimizer, start_factor=1e-3, total_iters=warmup_iters)
-    coco_gt = convert_to_coco_api(val_loader.dataset)
 
-    fucker = WindowsRouser()
-    fucker.start()
-
-    for epoch in range(cfg['epochs']):
-        model.train()
-
-        pbar = tqdm(train_loader, desc=f"Train[{epoch}]")
-        for (images, targets) in pbar:
-            images = torch.stack(images, dim=0).to(device=device, non_blocking=True)
-            targets = [{k: v.to(device, non_blocking=True) for k, v in t.items()} for t in targets]
-
-            with torch.amp.autocast(device_type=cfg['device']):
-                results = model(images, targets)
-                losses = torch.Tensor(sum(loss for loss in results.values()))
-
-            optimizer.zero_grad()
-            scaler.scale(losses).backward()
-            scaler.step(optimizer)
-            scaler.update()
-
-            if epoch < cfg['warmup_epochs']:
-                warmup_scheduler.step()
-
-            pbar.set_postfix(lr=optimizer.param_groups[0]['lr'], loss=losses.item())
-
-        if epoch >= cfg['warmup_epochs']:
-            scheduler.step()
-
-        coco_eval = evaluate(model, val_loader, device, coco_gt=coco_gt, outfile=results_file)
-        mAP = coco_eval.stats[0] if coco_eval else 0.0
-
-        early_stopper.update(mAP, model)
-        if early_stopper.early_stop:
-            print(f'Early stopping with mAP {mAP:.6f}')
-            break
-
-    print(f"Training finished, Results saved to {results_file}.")
-    fucker.stop()
+    trainer = Trainer(model=model,
+                      dataset_class=YoloDataset,
+                      collate_fn=collate_fn,
+                      transform_train=transform_train,
+                      transform_val=transform_val,
+                      **cfg
+                      )
+    trainer.start_training()
 
 
 if __name__ == '__main__':

@@ -1,4 +1,5 @@
 import torch
+import pandas as pd
 from tqdm import tqdm
 from pathlib import Path
 from pycocotools.coco import COCO
@@ -43,8 +44,8 @@ def convert_to_coco_api(ds):
     return coco_ds
 
 @torch.inference_mode()
-def evaluate(model, data_loader, device='cpu',
-             coco_gt=None, outfile:str|Path=None, min_score:float=None):
+def coco_evaluate(model, data_loader, device='cpu',
+                  coco_gt=None, outfile:str|Path=None, min_score:float=None):
     model.eval()
     if coco_gt is None:
         print('Warning: suggest to provide coco_gt as argument')

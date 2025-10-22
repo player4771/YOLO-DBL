@@ -271,7 +271,7 @@ class RF100Benchmark:
         Examples:
             Evaluate a model on a specific dataset
             >>> benchmark = RF100Benchmark()
-            >>> benchmark.evaluate("path/to/data.yaml", "path/to/val_log.txt", "path/to/eval_log.txt", 0)
+            >>> benchmark.coco_evaluate("path/to/data.yaml", "path/to/val_log.txt", "path/to/eval_log.txt", 0)
         """
         skip_symbols = ["🚀", "⚠️", "💡", "❌"]
         with open(yaml_path) as stream:

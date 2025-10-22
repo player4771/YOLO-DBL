@@ -1,5 +1,6 @@
 # Ultralytics 🚀 AGPL-3.0 License - https://ultralytics.com/license
 
+#YOLOv13基于ultralytics的旧版本8.3.63，目前官方的ultralytics库还没有更新对YOLOv12,v13的支持
 __version__ = "8.3.63"
 
 import os

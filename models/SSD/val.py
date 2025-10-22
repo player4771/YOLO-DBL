@@ -3,7 +3,7 @@ import torch
 from pathlib import Path
 
 from train import create_model
-from global_utils import evaluate, YoloDataset, AlbumentationsTransform
+from global_utils import coco_evaluate, YoloDataset, AlbumentationsTransform
 
 def collate_fn(batch):
     """
@@ -40,7 +40,7 @@ def val(args_file:str|Path=None, **kwargs):
         collate_fn=collate_fn
     )
 
-    evaluate(model, loader, device, outfile=None)
+    coco_evaluate(model, loader, device, outfile=None)
 
 if __name__ == '__main__':
     input_dir = Path("./runs/train4")

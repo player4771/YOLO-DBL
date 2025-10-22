@@ -1,35 +1,43 @@
 import torch
+import torch.nn.functional as F
+from tqdm import tqdm
 from torchvision.ops import box_iou
 
-def get_train_proposals_for_dataset(gt_boxes, cfg):
+def get_train_proposals_for_dataset(gt_boxes, img_size, roi_num_samples, roi_pos_fraction, roi_neg_iou_thresh, **kwargs):
     """为单个图像生成训练用的RoIs(Proposals)"""
-    num_pos = int(cfg['roi_num_samples'] * cfg['roi_pos_fraction'])
+    num_pos = int(roi_num_samples * roi_pos_fraction)
     if len(gt_boxes) > num_pos:
         perm = torch.randperm(len(gt_boxes))
         positive_rois = gt_boxes[perm[:num_pos]]
     else:
         positive_rois = gt_boxes
 
-    num_neg_candidates = (cfg['roi_num_samples'] - len(positive_rois)) * 5
-    random_boxes = torch.zeros((num_neg_candidates, 4), device=gt_boxes.device)
+    num_neg_candidates = (roi_num_samples - len(positive_rois)) * 5
 
-    # 在图像尺寸范围内生成随机候选框
-    random_boxes[:, 0] = torch.rand(num_neg_candidates) * cfg['img_size']
-    random_boxes[:, 1] = torch.rand(num_neg_candidates) * cfg['img_size']
-    random_boxes[:, 2] = torch.rand(num_neg_candidates) * (cfg['img_size'] - random_boxes[:, 0])
-    random_boxes[:, 3] = torch.rand(num_neg_candidates) * (cfg['img_size'] - random_boxes[:, 1])
-    random_boxes[:, 2:] += random_boxes[:, :2]  # x2,y2 = x1+w, y1+h
+    # 随机生成两组 (x, y) 坐标
+    boxes_xyxy = torch.rand(num_neg_candidates, 4, device=gt_boxes.device) * img_size
+    # 使用 min/max 确保 (x1, y1) < (x2, y2)
+    boxes_x1y1 = torch.min(boxes_xyxy[:, :2], boxes_xyxy[:, 2:])
+    boxes_x2y2 = torch.max(boxes_xyxy[:, :2], boxes_xyxy[:, 2:])
+
+    # 确保框有最小面积 (可选，但推荐)
+    # w = (random_boxes[:, 2] - random_boxes[:, 0]).clamp(min=1)
+    # h = (random_boxes[:, 3] - random_boxes[:, 1]).clamp(min=1)
+    # random_boxes[:, 2] = random_boxes[:, 0] + w
+    # random_boxes[:, 3] = random_boxes[:, 1] + h
+
+    random_boxes = torch.cat([boxes_x1y1, boxes_x2y2], dim=1)
 
     ious = box_iou(random_boxes, gt_boxes)
     max_ious = torch.max(ious, dim=1)[0] if ious.numel() > 0 else torch.zeros(random_boxes.shape[0])
 
-    num_neg = cfg['roi_num_samples'] - len(positive_rois)
-    negative_rois = random_boxes[max_ious < cfg['roi_neg_iou_thresh']][:num_neg]
+    num_neg = roi_num_samples - len(positive_rois)
+    negative_rois = random_boxes[max_ious < roi_neg_iou_thresh][:num_neg]
 
     # 如果负样本不足，允许重复采样以凑够数量
-    if len(positive_rois) + len(negative_rois) < cfg['roi_num_samples']:
+    if len(positive_rois) + len(negative_rois) < roi_num_samples:
         if len(negative_rois) > 0:
-            shortage = cfg['roi_num_samples'] - (len(positive_rois) + len(negative_rois))
+            shortage = roi_num_samples - (len(positive_rois) + len(negative_rois))
             negative_rois = torch.cat([negative_rois, negative_rois[torch.randint(0, len(negative_rois), (shortage,))]],
                                       dim=0)
 
@@ -37,20 +45,20 @@ def get_train_proposals_for_dataset(gt_boxes, cfg):
         negative_rois) > 0 else torch.empty(0, 4)
 
 
-def compute_targets_for_dataset(proposals, gt_boxes, gt_labels, cfg):
+def compute_targets_for_dataset(proposals, gt_boxes, gt_labels, roi_pos_iou_thresh, num_classes, **kwargs):
     """为Proposals计算分类标签和回归偏移量"""
     if proposals.numel() == 0:
         return torch.empty(0, dtype=torch.long), torch.empty(0, 4)
 
     ious = box_iou(proposals, gt_boxes)
     if ious.numel() == 0:
-        target_labels = torch.full((proposals.shape[0],), cfg['num_classes'] - 1, dtype=torch.long)
+        target_labels = torch.full((proposals.shape[0],), num_classes - 1, dtype=torch.long)
         target_deltas = torch.zeros_like(proposals)
         return target_labels, target_deltas
 
     max_ious, max_indices = torch.max(ious, dim=1)
     target_labels = gt_labels[max_indices]
-    target_labels[max_ious < cfg['roi_pos_iou_thresh']] = cfg['num_classes'] - 1
+    target_labels[max_ious < roi_pos_iou_thresh] = num_classes - 1
 
     matched_gt_boxes = gt_boxes[max_indices]
     px, py = (proposals[:, 0] + proposals[:, 2]) / 2, (proposals[:, 1] + proposals[:, 3]) / 2
@@ -60,10 +68,10 @@ def compute_targets_for_dataset(proposals, gt_boxes, gt_labels, cfg):
     gw, gh = (matched_gt_boxes[:, 2] - matched_gt_boxes[:, 0]).clamp(min=1e-6), (
             matched_gt_boxes[:, 3] - matched_gt_boxes[:, 1]).clamp(min=1e-6)
 
-    tx = (gx - px) / pw
-    ty = (gy - py) / ph
-    tw = torch.log(gw / pw)
-    th = torch.log(gh / ph)
+    tx:torch.Tensor = (gx - px) / pw
+    ty:torch.Tensor = (gy - py) / ph
+    tw:torch.Tensor = torch.log(gw / pw)
+    th:torch.Tensor = torch.log(gh / ph)
 
     targets = torch.stack((tx, ty, tw, th), dim=1)
 
@@ -94,8 +102,8 @@ class FastRCNNCollator:
             gt_labels = targets[i]['labels']
 
             # 为每个图像动态生成 proposals 和 targets
-            proposals = get_train_proposals_for_dataset(gt_boxes, self.cfg)
-            target_labels, target_deltas = compute_targets_for_dataset(proposals, gt_boxes, gt_labels, self.cfg)
+            proposals = get_train_proposals_for_dataset(gt_boxes, **self.cfg)
+            target_labels, target_deltas = compute_targets_for_dataset(proposals, gt_boxes, gt_labels, **self.cfg)
 
             if proposals.numel() > 0:
                 # 添加 batch index 形成 rois
@@ -155,65 +163,55 @@ def apply_regression(boxes, deltas):
     return torch.stack([pred_x1, pred_y1, pred_x2, pred_y2], dim=1)
 
 
-def convert_and_save_fp16(model_path, num_classes, output_path=None):
-    """
-    加载一个全精度(float32)模型,将其转换为半精度(float16),并保存.
+def compute_loss(scores, bbox_deltas, target_labels, target_deltas, num_classes):
+    """计算 Fast R-CNN 的分类和回归损失"""
 
-    Args:
-        model_path (str): 输入的 float32 .pth 文件路径.
-        num_classes (int): 模型的类别数 (包含背景).
-        output_path (str, optional): 输出的 float16 .pth 文件路径.
-                                     如果为 None,则在原文件名后添加 "_fp16".
-    """
-    if not output_path:
-        output_path = model_path.replace('.pth', '_fp16.pth')
+    cls_loss = F.cross_entropy(scores, target_labels)
 
-    print(f"\n--- Starting FP16 Conversion ---")
-    print(f"Loading float32 weights from: {model_path}")
+    # --- 计算回归损失 ---
+    # 筛选出正样本 (非背景)
+    pos_mask = (target_labels < (num_classes - 1))
+    num_pos = pos_mask.sum()
 
-    from model import FastRCNN
+    if num_pos > 0:
+        if bbox_deltas.shape[1] == num_classes * 4:
+            # 类别相关回归 [N, num_classes * 4]
+            pred_deltas_all = bbox_deltas.view(-1, num_classes, 4)
+            pred_deltas_pos = pred_deltas_all[torch.arange(len(pos_mask)), target_labels]
+        else:
+            # 类别无关回归 [N, 4]
+            # 所有正样本都使用这 [N, 4] 的预测值
+            pred_deltas_pos = bbox_deltas
 
-    # 加载模型结构并置于评估模式
-    model = FastRCNN(num_classes=num_classes)
-    model.load_state_dict(torch.load(model_path, map_location='cpu'))
-    model.eval()
+        reg_loss = F.smooth_l1_loss(
+            pred_deltas_pos[pos_mask],  # 预测的正样本偏移量
+            target_deltas[pos_mask],  # 目标的正样本偏移量
+            reduction='sum'
+        ) / num_pos
+    else:
+        # 如果没有正样本，回归损失为0
+        reg_loss = torch.tensor(0.0, device=scores.device)
 
-    # 将模型转换为半精度
-    print("Converting model to float16...")
-    model.half()
-
-    # 保存半精度的 state_dict
-    print(f"Saving float16 model to: {output_path}")
-    torch.save(model.state_dict(), output_path)
-    print("Conversion complete!")
+    return cls_loss, reg_loss
 
 @torch.inference_mode()
-def evaluate(model, val_loader, device, cfg):
+def evaluate(model, val_loader, amp=True, num_classes=4, **kwargs):
     """在验证集上评估模型"""
+    device = 'cuda' if amp else 'cpu'
     model.eval()
     total_val_loss = 0.0
-    with torch.no_grad():
-        for images, rois, target_labels, target_deltas in val_loader:
-            images, rois, target_labels, target_deltas = \
-                images.to(device), rois.to(device), target_labels.to(device), target_deltas.to(device)
 
-            # 在验证时也使用 autocast，以匹配训练时的数值精度
-            with torch.amp.autocast(device_type='cuda', enabled=cfg['amp']):
-                scores, bbox_deltas = model(images, rois)
-                cls_loss = torch.nn.functional.cross_entropy(scores, target_labels)
+    # @torch.inference_mode()已经替代了torch.no_grad()，所以不需要再添加
+    pbar = tqdm(val_loader, desc=f"Eval")
+    for images, rois, target_labels, target_deltas in pbar:
 
-                pos_mask = (target_labels < (cfg['num_classes'] - 1))
-                num_pos = pos_mask.sum()
+        # 在验证时也使用 autocast，以匹配训练时的数值精度
+        with torch.amp.autocast(device_type=device, enabled=amp):
+            scores, bbox_deltas = model(images.to(device), rois.to(device))
+            cls_loss, reg_loss = compute_loss(scores, bbox_deltas, target_labels.to(device), target_deltas.to(device), num_classes)
+            loss = cls_loss + reg_loss
 
-                if num_pos > 0:
-                    # 注意：在获取回归损失的目标时，需要正确索引
-                    pred_deltas = bbox_deltas.view(-1, cfg['num_classes'], 4)[
-                        torch.arange(len(pos_mask)), target_labels]
-                    reg_loss = torch.nn.functional.smooth_l1_loss(
-                        pred_deltas[pos_mask], target_deltas[pos_mask], reduction='sum') / num_pos
-                else:
-                    reg_loss = torch.tensor(0.0, device=device)
-
-            total_val_loss += (cls_loss + reg_loss).item()
+        total_val_loss += loss.item()
+        pbar.set_postfix(val_loss=loss.item())
 
     return total_val_loss / len(val_loader) if len(val_loader) > 0 else 0.0

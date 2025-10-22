@@ -171,7 +171,7 @@ def train(**kwargs):
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=cfg['epochs'], eta_min=1e-6)
     cls_criterion, reg_criterion = nn.CrossEntropyLoss(), nn.SmoothL1Loss()
     scaler = torch.amp.GradScaler(enabled=cfg['amp'])
-    early_stopper = EarlyStopping(patience=cfg['patience'], verbose=True, path=str(model_output))
+    early_stopper = EarlyStopping(patience=cfg['patience'], verbose=True, outfile=str(model_output))
 
     for epoch in range(cfg['epochs']):
         model.train()
