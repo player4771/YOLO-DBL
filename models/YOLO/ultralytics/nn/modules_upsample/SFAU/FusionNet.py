@@ -1,8 +1,7 @@
 import torch
 from torch import nn
-from torchsummary import summary
-from model.PGCU import PGCU
-from model.SFAU import SFAU
+from .PGCU import PGCU
+from .SFAU import SFAU
 
 class Resblock(nn.Module):
     def __init__(self):
@@ -151,5 +150,5 @@ if __name__ == '__main__':
     ms = torch.ones((32, 4, 32, 32))
     Model = FusionNet_SANM(4)
     output1, output2 = Model.forward(ms, pan)
-    summary(Model, input_size=[(4, 32, 32), (1, 128, 128)], device='cpu')
+    #summary(Model, input_size=[(4, 32, 32), (1, 128, 128)], device='cpu')
     print(output1.shape, output2.shape)

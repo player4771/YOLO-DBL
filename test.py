@@ -1,4 +1,5 @@
 import torch
+torch.set_float32_matmul_precision('high')
 
 from ultralytics.nn.modules import *
 from ultralytics.nn.modules_upsample import *
@@ -6,13 +7,13 @@ from ultralytics.nn.modules_attention import *
 
 from global_utils import check, label_image_tea
 
-def upsample_test(in_channels:int=64, size:int=256):
+def upsample_test(in_channels:int=64, size:int=64):
     # N(batch size), C(channels), H(height), W(width)
     x = torch.rand(2, in_channels, size, size).to('cuda')
     y = torch.rand(2, in_channels, size * 2, size * 2).to('cuda')
 
     modules = {
-        torch.nn.Upsample(scale_factor=2): x,
+        torch.nn.Upsample(scale_factor=2, mode='bilinear'): x,
         CARAFE(in_channels, in_channels): x,
         DLUPack(in_channels): x,
         CARAFEplusplus(in_channels): x,
@@ -21,7 +22,12 @@ def upsample_test(in_channels:int=64, size:int=256):
         MEUM(in_channels): x,
         CARAFEPack(in_channels): x,
         SAPA(in_channels): (y, x),
-        FGA(64, upscale=2): x,
+        FGA(64, upscale=2): None,
+        SFAU(in_channels, in_channels, scale=2): None,
+        FADE_H2L(in_channels, in_channels): None,
+        torch.compile(FADE_L2H(in_channels, in_channels)): None,
+        FADELite(in_channels, in_channels): None,
+        LDA_AQU(in_channels): x,
     }
 
     for module, input in modules.items():
@@ -59,6 +65,9 @@ def attention_test(in_channels:int=64, size:int=256):
         volo_d3(img_size=size, in_chans=in_channels): x_nchw,
         volo_d4(img_size=size, in_chans=in_channels): x_nchw,
         volo_d5(img_size=size, in_chans=in_channels): None, #过慢. 耗时大约是d4的30倍, d1的150倍
+        SLA(in_channels): x_nchw,
+        GAM(in_channels, in_channels): x_nchw,
+        SwinTransformer(in_channels, in_channels): x_nchw,
     }
 
     for module, input in modules.items():
@@ -67,4 +76,5 @@ def attention_test(in_channels:int=64, size:int=256):
 
 if __name__ == '__main__':
     img_file = r"E:\Projects\Datasets\tea_leaf_diseases_v4\train\images\IMG_20230612_151845_jpg.rf.f66a145758c7c6dd4c6ac816c813601a.jpg"
-    label_image_tea(img_file)
+    #label_image_tea(img_file)
+    attention_test()
