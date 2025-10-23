@@ -6,6 +6,7 @@ from tqdm import tqdm
 from pathlib import Path
 from datetime import datetime
 
+from .dataset import YoloDataset
 from .tools import find_new_dir, WindowsRouser
 from .coco import convert_to_coco_api, coco_evaluate
 
@@ -66,8 +67,6 @@ class Trainer:
     def __init__(self,
                  model,
                  data,
-                 dataset_class,
-                 collate_fn,
                  project='./runs',
                  name='train',
                  amp=True,
@@ -78,15 +77,15 @@ class Trainer:
                  patience=7,
                  warmup=0,
                  weight_decay=1e-5,
+                 collate_fn=None,
                  transform_train=None,
                  transform_val=None,
-                 no_sleep=False,
+                 no_sleep=True,
                  **kwargs
                  ):
         self.model = model
         cfg = {
             'data':data,
-            'dataset_class': dataset_class,
             'collate_fn': collate_fn,
             'project': project,
             'name': name,
@@ -104,14 +103,14 @@ class Trainer:
         }
         cfg.update(kwargs)
 
-        with open(data, 'r') as f:
-            cfg['dataset'] = yaml.load(f, Loader=yaml.FullLoader)
-
         cfg['device'] = 'cuda' if torch.cuda.is_available() and amp else 'cpu'
         self.device = torch.device(cfg['device'])
         output_dir = find_new_dir(Path(project, name))
         output_dir.mkdir(parents=True, exist_ok=True)
 
+        if 'dataset' not in cfg:
+            with open(data, 'r') as f:
+                cfg['dataset'] = yaml.load(f, Loader=yaml.FullLoader)
 
         data_root = Path(data).parent
         self.train_img_dir = data_root / dict(cfg['dataset'])['train']
@@ -121,11 +120,11 @@ class Trainer:
         self.results_file = output_dir / 'results.csv'
 
         # 创建 Dataset
-        dataset_train = dataset_class(
+        dataset_train = YoloDataset(
             img_dir=self.train_img_dir, label_dir=self.train_label_dir,
             transform=transform_train
         )
-        dataset_val = dataset_class(
+        dataset_val = YoloDataset(
             img_dir=self.val_img_dir, label_dir=self.val_label_dir,
             transform=transform_val
         )
@@ -170,16 +169,15 @@ class Trainer:
 
         for epoch in range(self.cfg['epochs']):
             self.model.train()
-
+            #TODO: 添加更多自定义部分，以适配更多模型
             pbar = tqdm(self.train_loader, desc=f"Train[{epoch}]")
             for (images, targets) in pbar:
-                #TODO:添加train_one_epoch以支持自定义训练逻辑
                 images = torch.stack(images, dim=0).to(device=self.device, non_blocking=True)
                 targets = [{k: v.to(self.device, non_blocking=True) for k, v in t.items()} for t in targets]
 
                 with torch.amp.autocast(device_type=self.cfg['device'], enabled=self.cfg['amp']):
-                    results = self.model(images, targets)
-                    losses = torch.Tensor(sum(loss for loss in results.values()))
+                    loss_dict = self.model(images, targets)
+                    losses = torch.Tensor(sum(loss for loss in loss_dict.values()))
 
                 self.optimizer.zero_grad()
                 self.scaler.scale(losses).backward()
@@ -205,3 +203,4 @@ class Trainer:
         print(f"Training finished, Results saved to {self.results_file}.")
         rouser.stop()
 
+        return self.model, self.cfg

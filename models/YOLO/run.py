@@ -42,5 +42,5 @@ def val(model, data:str):
 if __name__ == '__main__':
     data_yaml = "E:/Projects/Datasets/tea_leaf_diseases/data.yaml"
 
-    model, _ = train('yolov13s_v3edit1.yaml', data_yaml)
+    model, _ = train('yolov13s_v3edit2.yaml', data_yaml)
     #val(model, data_yaml)

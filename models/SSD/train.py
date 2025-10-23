@@ -7,7 +7,7 @@ torch.backends.cudnn.benchmark=True
 from torchvision.models.detection.anchor_utils import DefaultBoxGenerator
 
 from backbone import ResNetBackbone
-from global_utils import YoloDataset, AlbumentationsTransform, Trainer
+from global_utils import AlbumentationsTransform, Trainer
 
 def create_model(backbone:str='vgg16', num_classes:int=4): # -> model
     if backbone == "vgg16":
@@ -48,17 +48,12 @@ def create_model(backbone:str='vgg16', num_classes:int=4): # -> model
             size=(300,300)
         )
     else:
-        raise "Invalid backbone, required 'vgg16' or 'resnet50'."
+        raise "Invalid backbone, requires 'vgg16' or 'resnet50'."
 
     return model
 
-
 def collate_fn(batch):
-    """
-    DataLoader 的 collate_fn，因为每张图的 box 数量不同。
-    """
     return tuple(zip(*batch))
-
 
 def train(**kwargs):
     cfg = { #default args
@@ -84,17 +79,14 @@ def train(**kwargs):
 
     num_classes = cfg['dataset']['nc'] + 1 # +1 是因为 SSD 需要一个背景类
     model = create_model(backbone=cfg['backbone'], num_classes=num_classes)
-    transform_train = AlbumentationsTransform(is_train=True, size=300)
-    transform_val = AlbumentationsTransform(is_train=False, size=300)
 
-
-    trainer = Trainer(model=model,
-                      dataset_class=YoloDataset,
-                      collate_fn=collate_fn,
-                      transform_train=transform_train,
-                      transform_val=transform_val,
-                      **cfg
-                      )
+    trainer = Trainer(
+        model=model,
+        collate_fn=collate_fn,
+        transform_train=AlbumentationsTransform(is_train=True, size=300),
+        transform_val=AlbumentationsTransform(is_train=False, size=300),
+        **cfg
+    )
     trainer.start_training()
 
 

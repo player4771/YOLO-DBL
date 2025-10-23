@@ -72,7 +72,7 @@ def train(**kwargs):
 
         val_loss = evaluate(model, val_loader, **cfg)
 
-        early_stopper.update(-val_loss, model)
+        early_stopper.update(val_loss, model)
         if early_stopper.early_stop:
             print("Early stopping triggered.")
             break
