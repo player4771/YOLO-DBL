@@ -24,10 +24,12 @@ def upsample_test(in_channels:int=64, size:int=64):
         SAPA(in_channels): (y, x),
         FGA(64, upscale=2): None,
         SFAU(in_channels, in_channels, scale=2): None,
-        FADE_H2L(in_channels, in_channels): None,
+        torch.compile(AnyUpPack(in_channels)): None,
+        torch.compile(FADE_H2L(in_channels, in_channels)): None,
         torch.compile(FADE_L2H(in_channels, in_channels)): None,
-        FADELite(in_channels, in_channels): None,
-        LDA_AQU(in_channels): x,
+        torch.compile(FADELite(in_channels, in_channels)): None,
+        torch.compile(LDA_AQU(in_channels)): x,
+        CARAFE_XiaLiPKU(in_channels): None,
     }
 
     for module, input in modules.items():
@@ -68,6 +70,8 @@ def attention_test(in_channels:int=64, size:int=256):
         SLA(in_channels): x_nchw,
         GAM(in_channels, in_channels): x_nchw,
         SwinTransformer(in_channels, in_channels): x_nchw,
+        MLCA(in_channels): x_nchw,
+        ELA(in_channels): x_nchw,
     }
 
     for module, input in modules.items():

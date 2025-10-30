@@ -25,9 +25,9 @@ def train(model:str, data:str):
         mixup=0.05,  # S:0.05; L:0.15; X:0.2
         copy_paste=0.15,  # S:0.15; L:0.5; X:0.6
         device="cuda",
-        #lr0=1e-3,  # n:1e-4, s:1e-3 optimizer=auto时会被忽略
+        #lr0=1e-3,  # n:1e-4, s:1e-3. optimizer=auto时会被忽略
         lrf=1e-2,
-        patience=10,
+        patience=20,
         cos_lr=True
     )
 
@@ -39,8 +39,9 @@ def val(model, data:str):
     metrics = model.val(data=data)
     return metrics
 
+
 if __name__ == '__main__':
     data_yaml = "E:/Projects/Datasets/tea_leaf_diseases/data.yaml"
 
-    model, _ = train('yolov13s_v3edit2.yaml', data_yaml)
+    model, _ = train('yolov3.yaml', data_yaml)
     #val(model, data_yaml)
