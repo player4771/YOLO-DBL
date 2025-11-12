@@ -11,3 +11,4 @@
 /models/YOLO/yolov13n.pt
 /models/YOLO/yolov13s.pt
 /models/YOLO/runs/
+/global_utils/cache/

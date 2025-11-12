@@ -1,3 +1,5 @@
+# https://github.com/BangguWu/ECANet
+
 from torch import nn
 from math import log
 

@@ -11,6 +11,8 @@
       <w>iscrowd</w>
       <w>maxpool</w>
       <w>mobilenetv</w>
+      <w>nchw</w>
+      <w>ncols</w>
       <w>outdir</w>
       <w>preds</w>
       <w>rcnn</w>
