@@ -3,21 +3,23 @@ from .BiFormer import BiFormer, biformer
 from .DAT import DAT, ShiftWindowAttention, DAttentionBaseline, FusedKQnA
 from .SLA import SLA
 
-from .AxialNet import AxialAttention, AxialAttention_dynamic, AxialAttention_wopos
-from .BAM import BAM
+from .AxialNet import AxialBlock, AxialBlock_dynamic, AxialBlock_wopos, AxialBlock_YOLO
+from .BAM import BAM, BAM_YOLO
 from .CoordAttention import CoordAttention
-from .CPCANet import RepBlock as CPCA
-from .DeBiFormer import Block as DeBiAttention
+from .CPCANet import RepBlock as CPCA, CPCA_YOLO
+from .DeBiFormer import DeBiAttentionBlock as DeBiAttention, DeBiAttention_YOLO
 from .ECA import ECALayer, ECALayer_ns
-from .EfficientAttention import EfficientAttention
+from .EfficientAttention import EfficientAttention, EfficientAttention_YOLO
 from .EMA import EMA
-from .FullyAttentional import FullyAttentionalBlock
+from .FullyAttentional import FullyAttentionalBlock, FullyAttentionalBlock_YOLO
 from .GAM import GAM
-from .HiLo import HiLo
+from .HiLo import HiLo, HiLo_YOLO
 from .MLCA import MLCA
-from .NonLocal import NLBlockND, NonLocalBlock1D, NonLocalBlock2D, NonLocalBlock3D
+from .NonLocal import NLBlockND, NonLocalBlock1D, NonLocalBlock2D, NonLocalBlock3D, NonLocal_YOLO
 from .SE import SELayer
 from .SimAM import SimAM
-from .SwinTransformer import SwinTransformer, SwinTransformerB, SwinTransformerC
-from .VOLO import VOLO, volo_d1, volo_d2, volo_d3, volo_d4, volo_d5
-from .YOLO_ELA import ELA, MHSA
+from .SwinTransformer import SwinTransformer
+from .VOLO import VOLO, volo_d1, volo_d2, volo_d3, volo_d4, volo_d5, Outlooker_YOLO
+from .YOLO_ELA import ELA
+
+from .MyAttention import EdgeAwareAttention, EdgeAwareAttentionV2

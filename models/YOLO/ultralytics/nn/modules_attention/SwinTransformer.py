@@ -101,6 +101,24 @@ class WindowAttention(nn.Module):
         return x
 
 
+class SwinTransformerBlock(nn.Module):
+    def __init__(self, c1, c2, num_heads, num_layers, window_size=8):
+        super().__init__()
+        self.conv = None if c1 == c2 else Conv(c1, c2)
+        # remove input_resolution
+        self.blocks = nn.Sequential(
+            *[SwinTransformerLayer(
+                dim=c2, num_heads=num_heads, window_size=window_size,
+                shift_size=0 if (i % 2 == 0) else window_size // 2
+            ) for i in range(num_layers)]
+        )
+
+    def forward(self, x):
+        if self.conv is not None:
+            x = self.conv(x)
+        x = self.blocks(x)
+        return x
+
 class SwinTransformer(nn.Module):
     # CSP Bottleneck https://github.com/WongKinYiu/CrossStagePartialNetworks
     def __init__(self, c1, c2, n=1, shortcut=True, g=1, e=0.5):  # ch_in, ch_out, number, shortcut, groups, expansion
@@ -284,22 +302,4 @@ class SwinTransformerLayer(nn.Module):
         x = x.permute(0, 2, 1).contiguous().view(-1, C, H, W)  # b c h w
         if Padding:
             x = x[:, :, :H_, :W_]  # reverse padding
-        return x
-
-
-class SwinTransformerBlock(nn.Module):
-    def __init__(self, c1, c2, num_heads, num_layers, window_size=8):
-        super().__init__()
-        self.conv = None
-        if c1 != c2:
-            self.conv = Conv(c1, c2)
-        # remove input_resolution
-        self.blocks = nn.Sequential(*[SwinTransformerLayer(dim=c2, num_heads=num_heads, window_size=window_size,
-                                                           shift_size=0 if (i % 2 == 0) else window_size // 2) for i in
-                                      range(num_layers)])
-
-    def forward(self, x):
-        if self.conv is not None:
-            x = self.conv(x)
-        x = self.blocks(x)
         return x

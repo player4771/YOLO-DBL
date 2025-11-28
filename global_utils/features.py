@@ -1,12 +1,13 @@
 import torch
-import joblib
-from PIL import Image
 from math import sqrt
-from pathlib import Path
 import matplotlib.pyplot as plt
-from torchvision import transforms
 
-import ultralytics
+__all__ = (
+    'extract_data',
+    'find_plot_size',
+    'plot_feature_map',
+    'plot_feature_maps',
+)
 
 def extract_data(model, model_input:torch.Tensor, layer_indexes:list|tuple[int,...]):
 
@@ -105,6 +106,12 @@ def plot_feature_maps(*feature_maps) -> None:
         plot_feature_map(fm)
 
 if __name__ == "__main__":
+    import joblib
+    from PIL import Image
+    from pathlib import Path
+    import ultralytics
+    from torchvision import transforms
+
     model = ultralytics.YOLO(r'E:\Projects\PyCharm\Paper2\models\YOLO\runs\train16\weights\best.pt')
     sample = r"E:\Projects\Datasets\example\algal+gray.jpg"
     model_input = transforms.ToTensor()(Image.open(sample)).unsqueeze(0) #ToTensor会自动HWC->CHW和标准化

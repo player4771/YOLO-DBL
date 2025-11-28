@@ -5,7 +5,7 @@ from ultralytics.nn.modules import *
 from ultralytics.nn.modules_upsample import *
 from ultralytics.nn.modules_attention import *
 
-from global_utils import check, label_image_tea
+from global_utils import check_time, label_image_tea
 
 def upsample_test(in_channels:int=64, size:int=64):
     # N(batch size), C(channels), H(height), W(width)
@@ -35,9 +35,9 @@ def upsample_test(in_channels:int=64, size:int=64):
     for module, input in modules.items():
         if input is not None:
             if not isinstance(input, tuple):
-                check(module.to('cuda'), input)
+                check_time(module.to('cuda'), input)
             else:
-                check(module.to('cuda'), *input)
+                check_time(module.to('cuda'), *input)
 
 
 def attention_test(in_channels:int=64, size:int=256):
@@ -76,7 +76,7 @@ def attention_test(in_channels:int=64, size:int=256):
 
     for module, input in modules.items():
         if input is not None:
-            check(module.to('cuda'), input)
+            check_time(module.to('cuda'), input)
 
 if __name__ == '__main__':
     img_file = r"E:\Projects\Datasets\tea_leaf_diseases_v4\train\images\IMG_20230612_151845_jpg.rf.f66a145758c7c6dd4c6ac816c813601a.jpg"

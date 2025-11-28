@@ -12,7 +12,7 @@ class HiLo(nn.Module):
     Paper: Fast Vision Transformers with HiLo Attention
     Link: https://arxiv.org/abs/2205.13213
     """
-    def __init__(self, dim, num_heads=8, qkv_bias=False, qk_scale=None, attn_drop=0., proj_drop=0., window_size=2, alpha=0.5):
+    def __init__(self, dim, num_heads=8, qkv_bias=False, qk_scale=None, window_size=2, alpha=0.5):
         super().__init__()
         assert dim % num_heads == 0, f"dim {dim} should be divided by num_heads {num_heads}."
         head_dim = int(dim/num_heads)
@@ -162,3 +162,22 @@ class HiLo(nn.Module):
         lofi_flops += Np * self.l_dim * self.l_dim
 
         return hifi_flops + lofi_flops
+
+
+class HiLo_YOLO(nn.Module):
+    def __init__(self, c1, c2=None, num_heads=8, window_size=2, alpha=0.5):
+        super().__init__()
+        # HiLo 是 Self-Attention，通常输入输出通道一致
+        assert c1 == c2, "requires c1 == c2"
+        # 确保 dim 能被 num_heads 整除
+        assert c2 % num_heads == 0, "requires out_channels % num_heads == 0"
+
+        self.hilo = HiLo(
+            dim=c1,
+            num_heads=num_heads,
+            window_size=window_size,
+            alpha=alpha
+        )
+
+    def forward(self, x):
+        return self.hilo(x)

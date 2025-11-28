@@ -10,6 +10,11 @@ from .dataset import YoloDataset
 from .tools import find_new_dir, WindowsRouser
 from .coco import convert_to_coco_api, coco_evaluate
 
+__all__ = (
+    'EarlyStopping',
+    'Trainer',
+)
+
 class EarlyStopping:
     """
     当监控的指标停止改善时，提前停止训练。

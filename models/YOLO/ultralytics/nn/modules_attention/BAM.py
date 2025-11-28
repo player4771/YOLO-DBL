@@ -47,3 +47,24 @@ class BAM(nn.Module):
     def forward(self,in_tensor):
         att = 1 + F.sigmoid( self.channel_att(in_tensor) * self.spatial_att(in_tensor) )
         return att * in_tensor
+
+class BAM_YOLO(nn.Module):
+    """
+    YOLO 专用封装类
+    Args:
+        c1 (int): 输入通道
+        c2 (int): 输出通道 (BAM通常保持通道不变，故c2应等于c1)
+        reduction (int): 缩减比率
+    """
+    def __init__(self, c1, c2, reduction=16):
+        super().__init__()
+        # 确保通道一致，虽然YOLO parse_model会传入c2，但注意力模块通常不改变通道
+        assert c1 == c2, f"BAM input channel {c1} must equal output channel {c2}"
+        self.channel_att = ChannelGate(c1, reduction_ratio=reduction)
+        self.spatial_att = SpatialGate(c1, reduction_ratio=reduction)
+
+    def forward(self, in_tensor):
+        if in_tensor.shape[0] == 1:
+            return in_tensor
+        att = 1 + torch.sigmoid(self.channel_att(in_tensor) * self.spatial_att(in_tensor))
+        return att * in_tensor

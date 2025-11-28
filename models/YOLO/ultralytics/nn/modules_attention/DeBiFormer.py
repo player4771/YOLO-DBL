@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numbers
-from collections import OrderedDict
 from einops import rearrange
 from einops.layers.torch import Rearrange
 from timm.layers import DropPath, to_2tuple, trunc_normal_
@@ -22,10 +21,7 @@ class LayerNorm(nn.Module):
         #return to_4d(self.body(to_3d(x)),s, h, w)
 
 class LayerNorm2d(nn.Module):
-
-  def __init__(self, 
-               channels
-               ):
+  def __init__(self, channels):
     super().__init__()
     self.ln = nn.LayerNorm(channels)
 
@@ -556,7 +552,7 @@ class BiLevelRoutingAttention(nn.Module):
         
 class TransformerMLPWithConv(nn.Module):
 
-    def __init__(self, channels, expansion, drop):
+    def __init__(self, channels:int, expansion:int, drop):
         
         super().__init__()
         
@@ -997,8 +993,7 @@ def get_pe_layer(emb_dim, pe_dim=None, name='none'):
         raise ValueError(f'PE name {name} is not surpported!')
 
 
-class Block(nn.Module):
-    #DeBiAttention
+class DeBiAttentionBlock(nn.Module):
     def __init__(self, dim, drop_path=0., layer_scale_init_value=-1,
                        num_heads=8, n_win=7, qk_dim=None, qk_scale=None,
                        kv_per_win=4, kv_downsample_ratio=4, 
@@ -1137,314 +1132,64 @@ class Block(nn.Module):
         return x
 
 
+class DeBiAttention_YOLO(nn.Module):
+    """
+    DeBiFormer Attention Wrapper for YOLO
+    Arguments:
+        c1 (int): Input channels
+        c2 (int): Output channels (should be same as c1 usually)
+        num_heads (int): Number of attention heads
+        n_win (int): Window size (default 7)
+    """
 
-class DeBiFormer(nn.Module):
-    def __init__(self,
-                 depth=[3, 4, 8, 3],
-                 in_chans=3,
-                 num_classes=1000,
-                 embed_dim=[64, 128, 320, 512],
-                 head_dim=64,
-                 qk_scale=None,
-                 representation_size=None,
-                 resume='',
-                 norm_cfg=None,
-                 drop_path_rate=0.,
-                 drop_rate=0.,
-                 use_checkpoint_stages=[],
-                 ########
-                 n_win=7,
-                 kv_downsample_mode='ada_avgpool',
-                 kv_per_wins=[2, 2, -1, -1],
-                 topks=[8, 8, -1, -1],
-                 side_dwconv=5,
-                 layer_scale_init_value=-1,
-                 qk_dims=[None, None, None, None],
-                 param_routing=False,
-                 diff_routing=False,
-                 soft_routing=False,
-                 pre_norm=True,
-                 pe=None,
-                 pe_stages=[0],
-                 before_attn_dwconv=3,
-                 auto_pad=False,
-                 #-----------------------
-                 kv_downsample_kernels=[4, 2, 1, 1],
-                 kv_downsample_ratios=[4, 2, 1, 1], # -> kv_per_win = [2, 2, 2, 1]
-                 mlp_ratios=[4, 4, 4, 4],
-                 param_attention='qkvo',
-                 param_size='small',
-                 mlp_dwconv=False,
-                 norm_eval=True, 
-                 disable_bn_grad=False
-                 ):
-        """
-        Args:
-            depth (list): depth of each stage
-            in_chans (int): number of input channels
-            num_classes (int): number of classes for classification head
-            embed_dim (list): embedding dimension of each stage
-            head_dim (int): head dimension
-            qk_scale (float): override default qk scale of head_dim ** -0.5 if set
-            representation_size (Optional[int]): enable and set representation layer (pre-logits) to this value if set
-            drop_rate (float): dropout rate
-            drop_path_rate (float): stochastic depth rate
-        """
+    def __init__(self, c1, c2, num_heads=8, n_win=7):
         super().__init__()
-        self.num_classes = num_classes
-        self.num_features = self.embed_dim = embed_dim  # num_features for consistency with other models
+        # YOLO通常保持通道数不变，如果变化则需要1x1卷积
+        self.c1 = c1
+        self.c2 = c2
+        self.dim = c2
 
-        ############ downsample layers (patch embeddings) ######################
-        self.downsample_layers = nn.ModuleList()
-        # NOTE: uniformer uses two 3*3 conv, while in many other transformers this is one 7*7 conv
-        stem = nn.Sequential(
-            nn.Conv2d(in_chans, embed_dim[0] // 2, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1)),
-            nn.BatchNorm2d(embed_dim[0] // 2),
-            nn.GELU(),
-            nn.Conv2d(embed_dim[0] // 2, embed_dim[0], kernel_size=(3, 3), stride=(2, 2), padding=(1, 1)),
-            nn.BatchNorm2d(embed_dim[0]),
-        )
-        if (pe is not None) and 0 in pe_stages:
-            stem.append(get_pe_layer(emb_dim=embed_dim[0], name=pe))
-        self.downsample_layers.append(stem)
+        # 如果输入输出通道不同，添加投影层
+        self.project = nn.Conv2d(c1, c2, 1, 1) if c1 != c2 else nn.Identity()
 
-        for i in range(3):
-            downsample_layer = nn.Sequential(
-                nn.Conv2d(embed_dim[i], embed_dim[i+1], kernel_size=(3, 3), stride=(2, 2), padding=(1, 1)),
-                nn.BatchNorm2d(embed_dim[i+1])
-            )
-            if (pe is not None) and i+1 in pe_stages:
-                downsample_layer.append(get_pe_layer(emb_dim=embed_dim[i+1], name=pe))
-            self.downsample_layers.append(downsample_layer)
-        ##########################################################################
-
-        self.stages = nn.ModuleList() # 4 feature resolution stages, each consisting of multiple residual blocks
-        nheads= [dim // head_dim for dim in qk_dims]
-        dp_rates=[x.item() for x in torch.linspace(0, drop_path_rate, sum(depth))]
-        cur = 0
-        for i in range(4):
-            stage = nn.Sequential(
-                *[Block(dim=embed_dim[i], drop_path=dp_rates[cur + j],
-                        layer_scale_init_value=layer_scale_init_value,
-                        topk=topks[i],
-                        num_heads=nheads[i],
-                        n_win=n_win,
-                        qk_dim=qk_dims[i],
-                        qk_scale=qk_scale,
-                        kv_per_win=kv_per_wins[i],
-                        kv_downsample_ratio=kv_downsample_ratios[i],
-                        kv_downsample_kernel=kv_downsample_kernels[i],
-                        kv_downsample_mode=kv_downsample_mode,
-                        param_attention=param_attention,
-                        param_size=param_size,
-                        param_routing=param_routing,
-                        diff_routing=diff_routing,
-                        soft_routing=soft_routing,
-                        mlp_ratio=mlp_ratios[i],
-                        mlp_dwconv=mlp_dwconv,
-                        side_dwconv=side_dwconv,
-                        before_attn_dwconv=before_attn_dwconv,
-                        pre_norm=pre_norm,
-                        auto_pad=auto_pad) for j in range(depth[i])],
-            )
-            self.stages.append(stage)
-            cur += depth[i]
-
-        ##########################################################################
-        # Representation layer
-        if representation_size:
-            self.num_features = representation_size
-            self.pre_logits = nn.Sequential(OrderedDict([
-                ('fc', nn.Linear(embed_dim, representation_size)),
-                ('act', nn.Tanh())
-            ]))
+        # 自动选择 param_size 配置
+        # DeBiFormer 代码中硬编码了特定通道数的参数
+        # 'tiny'/'small': 64, 128, 256, 512
+        # 'base': 96, 192, 384, 768
+        if self.dim in [64, 128, 256, 512]:
+            param_size = 'small'
+        elif self.dim in [96, 192, 384, 768]:
+            param_size = 'base'
         else:
-            self.pre_logits = nn.Identity()
-        
+            # 如果通道数不在预设列表中（例如 YOLOv8n 的 80），则默认尝试使用 small 配置
+            # 注意：这可能会因为字典键不存在而报错，建议调整网络宽度以匹配上述数值
+            print(f"Warning: Channel size {self.dim} not in DeBiFormer preset (64,128,256,512,96...). Defaulting to 'small' logic but this might crash.")
+            param_size = 'small'
 
-        # step 2: add extra norms for dense tasks
-        self.extra_norms = nn.ModuleList()
-        for i in range(4):
-            self.extra_norms.append(LayerNorm2d(self.embed_dim[i]))
-        
-        #Reset_para
-        print('initialize_weights...')
-        self.reset_parameters()
-        
-        # step 3: initialization & load ckpt
-        if resume:
-            self.init_weights(resume)
-
-        # step 4: freeze bn
-        self.norm_eval = norm_eval
-        if disable_bn_grad:
-            for m in self.modules():
-                if isinstance(m, nn.BatchNorm2d):
-                    for param in m.parameters():
-                        param.requires_grad = False
-                        
-    def init_weights(self, pretrained=None):
-        if isinstance(pretrained, str):
-            print('\n using pretrained model\n')
-            #logger = get_root_logger()
-            checkpoint = torch.load(pretrained, map_location='cpu')['model']
-            self.load_state_dict(checkpoint, strict=False)
- 
-    
-    def reset_parameters(self):
-        for m in self.parameters():
-            if isinstance(m, (nn.Linear, nn.Conv2d)):
-                nn.init.kaiming_normal_(m.weight)
-                nn.init.zeros_(m.bias)
-            elif isinstance(m, nn.LayerNorm):
-                nn.init.constant_(m.bias, 0)
-                nn.init.constant_(m.weight, 1.0)
-        
-            
-    @torch.jit.ignore
-    def no_weight_decay(self):
-        return {'pos_embed', 'cls_token'}
-
-    def get_classifier(self):
-        return self.head
-
-    def reset_classifier(self, num_classes, global_pool=''):
-        self.num_classes = num_classes
-        self.head = nn.Linear(self.embed_dim, num_classes) if num_classes > 0 else nn.Identity()
-
-    def forward_features(self, x: torch.Tensor):
-        out = []
-        for i in range(4):
-            x = self.downsample_layers[i](x)
-            x = self.stages[i](x)
-            # NOTE: in the version before submission:
-            # x = self.extra_norms[i](x)
-            # out.append(x)
-            out.append(self.extra_norms[i](x).contiguous())
-        return tuple(out)
+            # 实例化 DeBiLevelRoutingAttention
+        # auto_pad=True 对 YOLO 很重要，因为特征图尺寸不一定是 n_win 的倍数
+        self.attn = DeBiLevelRoutingAttention(
+            dim=self.dim,
+            num_heads=num_heads,
+            n_win=n_win,
+            auto_pad=True,
+            param_size=param_size,
+            topk=4,  # 默认 topk
+            side_dwconv=5
+        )
 
     def forward(self, x):
-        x = self.forward_features(x)
-        return x            
-    
+        # x shape: [Batch, Channel, Height, Width]
+        x = self.project(x)
 
-def debi_base(resume=False, resume_cfg=None, **kwargs):
-    model = DeBiFormer(
-            depth=[2, 2, 9, 1],
-            embed_dim=[96, 192, 384, 768], mlp_ratios=[3, 3, 3, 3],
-            drop_path_rate=0.4,  #Drop rate
-            #------------------------------
-            n_win=7,
-            kv_downsample_mode='identity',
-            kv_per_wins=[-1, -1, -1, -1],
-            topks=[4, 8, 16, -2],
-            side_dwconv=5,
-            before_attn_dwconv=3,
-            layer_scale_init_value=-1,
-            qk_dims=[96, 192, 384, 768],
-            head_dim=32,
-            param_routing=False, diff_routing=False, soft_routing=False,
-            pre_norm=True,
-            pe=None)
-    return model
+        # DeBiFormer 内部处理了 NHWC <-> NCHW 的转换
+        # 但 DeBiLevelRoutingAttention.forward 开头有 auto_pad 逻辑，
+        # 它期望输入是 NHWC 格式 (N, H, W, C) 或者它在内部处理 NCHW?
+        # 查看源码发现：forward 中有 `N, H_in, W_in, C = x.size()`
+        # 这说明它期望输入是 NHWC 格式。
 
+        x = x.permute(0, 2, 3, 1)  # NCHW -> NHWC
+        x = self.attn(x)
+        x = x.permute(0, 3, 1, 2)  # NHWC -> NCHW
 
-class debi_tiny(DeBiFormer):
-    def __init__(self, resume='', **kwargs):
-        super(debi_tiny, self).__init__(
-            
-            # use _delete_=True to delete all content in the same section of base config
-            # otherwise, configs are merged with the same section of base config
-            num_classes=80,
-            #--------------------------
-            depth=[1, 1, 4, 1],
-            embed_dim=[64, 128, 256, 512],
-            mlp_ratios=[3, 3, 3, 3],
-            param_size='tiny',
-            n_win=8,
-            kv_downsample_mode='identity',
-            kv_per_wins=[-1, -1, -1, -1],
-            topks=[4, 8, 16, -2],
-            side_dwconv=5,
-            before_attn_dwconv=3,
-            layer_scale_init_value=-1,
-            qk_dims=[64, 128, 256, 512],
-            head_dim=32,
-            param_routing=False, diff_routing=False, soft_routing=False,
-            pre_norm=True,
-            pe=None,
-            #------------------- 
-            resume=resume, 
-            norm_eval=True, 
-            disable_bn_grad=False,
-            #--------------------------
-            # it seems whole_eval takes raw-resolution input
-            # use auto_pad to allow any-size input
-            auto_pad=True,
-            # use grad ckpt to save memory on old gpus
-            use_checkpoint_stages=[],
-            drop_path_rate=0.1,
-            
-            **kwargs
-        )
-
-
-class debi_small(DeBiFormer):
-    def __init__(self, resume='', **kwargs):
-        super(debi_small, self).__init__(
-            
-            # use _delete_=True to delete all content in the same section of base config
-            # otherwise, configs are merged with the same section of base config
-            num_classes=80,
-            #--------------------------
-            depth=[2, 2, 9, 3],
-            embed_dim=[64, 128, 256, 512], 
-            mlp_ratios=[3, 3, 3, 2],
-            param_size='small',
-            n_win=16,
-            kv_downsample_mode='identity',
-            kv_per_wins=[-1, -1, -1, -1],
-            topks=[4, 8, 16, -2],
-            side_dwconv=5,
-            before_attn_dwconv=3,
-            layer_scale_init_value=-1,
-            qk_dims=[64, 128, 256, 512],
-            head_dim=32,
-            param_routing=False, diff_routing=False, soft_routing=False,
-            pre_norm=True,
-            pe=None,
-            #------------------- 
-            resume=resume, 
-            norm_eval=True, 
-            disable_bn_grad=False,
-            #--------------------------
-            # it seems whole_eval takes raw-resolution input
-            # use auto_pad to allow any-size input
-            auto_pad=True,
-            # use grad ckpt to save memory on old gpus
-            use_checkpoint_stages=[],
-            #drop_path_rate=0.,
-            **kwargs
-        )
-
-if __name__ == '__main__':
-    model = DeBiFormer(
-            depth=[2, 2, 9, 1],
-            embed_dim=[64, 128, 256, 512], mlp_ratios=[3, 3, 3, 2],
-            #------------------------------
-            n_win=7,
-            kv_downsample_mode='identity',
-            kv_per_wins=[-1, -1, -1, -1],
-            topks=[4, 8, 16, -2],
-            side_dwconv=5,
-            before_attn_dwconv=3,
-            layer_scale_init_value=-1,
-            qk_dims=[64, 128, 256, 512],
-            head_dim=32,
-            param_routing=False, diff_routing=False, soft_routing=False,
-            pre_norm=True,
-            pe=None)
-
-    input_shape = (2, 3, 224, 224)
-    x = torch.rand(*input_shape)
-    print(model(x).shape)
+        return x

@@ -122,14 +122,11 @@ class Outlooker(nn.Module):
                                      qkv_bias=qkv_bias, qk_scale=qk_scale,
                                      attn_drop=attn_drop)
 
-        self.drop_path = DropPath(
-            drop_path) if drop_path > 0. else nn.Identity()
+        self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
 
         self.norm2 = norm_layer(dim)
         mlp_hidden_dim = int(dim * mlp_ratio)
-        self.mlp = Mlp(in_features=dim,
-                       hidden_features=mlp_hidden_dim,
-                       act_layer=act_layer)
+        self.mlp = Mlp(in_features=dim, hidden_features=mlp_hidden_dim, act_layer=act_layer)
 
     def forward(self, x):
         x = x + self.drop_path(self.attn(self.norm1(x)))
@@ -138,7 +135,7 @@ class Outlooker(nn.Module):
 
 
 class Mlp(nn.Module):
-    "Implementation of MLP"
+    """Implementation of MLP"""
 
     def __init__(self, in_features, hidden_features=None,
                  out_features=None, act_layer=nn.GELU,
@@ -770,3 +767,27 @@ def volo_d5(pretrained=False, **kwargs):
                  **kwargs)
     model.default_cfg = default_cfgs['volo_large']
     return model
+
+
+class Outlooker_YOLO(nn.Module):
+    def __init__(self, c1, c2=None, kernel_size=3, padding=1, stride=1, num_heads=8):
+        super().__init__()
+        assert c2 is None or c1==c2
+        self.block = Outlooker(
+            dim=c1,
+            kernel_size=kernel_size,
+            padding=padding,
+            stride=stride,
+            num_heads=num_heads
+        )
+
+    def forward(self, x):
+        # NCHW -> NHWC
+        # VOLO 的 OutlookAttention 内部使用 Linear 层，期望输入最后也是 Channel 维
+        x = x.permute(0, 2, 3, 1)
+
+        x = self.block(x)
+
+        # NHWC -> NCHW
+        x = x.permute(0, 3, 1, 2)
+        return x

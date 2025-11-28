@@ -6,6 +6,12 @@ from torchvision.tv_tensors import BoundingBoxes
 
 from .tools import rand_rgb
 
+__all__ = (
+    'YoloDataset',
+    'label_image',
+    'label_image_tea',
+)
+
 class YoloDataset(torch.utils.data.Dataset):
     """用于读取 YOLO 格式数据集的 PyTorch Dataset 类。"""
 

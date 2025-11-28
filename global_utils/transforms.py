@@ -3,6 +3,10 @@ import albumentations as A
 import os
 os.environ['NO_ALBUMENTATIONS_UPDATE'] = '1'
 
+__all__ = (
+    'AlbumentationsTransform',
+)
+
 class AlbumentationsTransform:
     def __init__(self, is_train=True, size=300):
         if is_train:

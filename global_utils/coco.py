@@ -5,6 +5,11 @@ from pathlib import Path
 from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
 
+__all__ = (
+    'convert_to_coco_api',
+    'coco_evaluate',
+    'write_coco_stat',
+)
 
 def convert_to_coco_api(ds):
     """将数据集转换为COCO API格式以进行评估"""

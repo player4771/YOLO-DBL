@@ -60,7 +60,14 @@ class AxialAttention(nn.Module):
         # Calculate position embedding
         all_embeddings = torch.index_select(self.relative, 1, self.flatten_index).view(self.group_planes * 2, self.kernel_size, self.kernel_size)
         q_embedding, k_embedding, v_embedding = torch.split(all_embeddings, [self.group_planes // 2, self.group_planes // 2, self.group_planes], dim=0)
-        
+
+        if H != self.kernel_size: #edit
+            # 如果当前特征图尺寸 H (例如32) 不等于 初始化尺寸 (例如80)
+            # 使用双线性插值调整 embedding 的大小
+            q_embedding = F.interpolate(q_embedding.unsqueeze(0), size=(H, H), mode='bilinear', align_corners=True).squeeze(0)
+            k_embedding = F.interpolate(k_embedding.unsqueeze(0), size=(H, H), mode='bilinear', align_corners=True).squeeze(0)
+            v_embedding = F.interpolate(v_embedding.unsqueeze(0), size=(H, H), mode='bilinear', align_corners=True).squeeze(0)
+
         qr = torch.einsum('bgci,cij->bgij', q, q_embedding)
         kr = torch.einsum('bgci,cij->bgij', k, k_embedding).transpose(2, 3)
         
@@ -721,5 +728,28 @@ def MedT(pretrained=False, **kwargs):
 def logo(pretrained=False, **kwargs):
     model = medt_net(AxialBlock,AxialBlock, [1, 2, 4, 1], s= 0.125, **kwargs)
     return model
+
+class AxialBlock_YOLO(nn.Module):
+    """
+    Wrapper for AxialBlock to fit YOLO's argument style.
+    Args:
+        c1 (int): Input channels
+        c2 (int): Output channels
+        k (int): kernel_size, MUST match the feature map size at this layer!
+
+    YAML示例:
+    - [-1, 1, AxialBlockYOLO, [256, 80]]
+    - [-1, 1, AxialBlockYOLO, [512, 40]]
+    - [-1, 1, AxialBlockYOLO, [1024, 20]]
+    """
+    def __init__(self, c1, c2, k=20, groups=8):
+        super().__init__()
+        # AxialBlock 的输出通道是 planes * expansion(2)。
+        # 若输出c2，则传入的planes为c2//2
+        assert c2 % 2 == 0, "AxialBlock output channels (c2) must be divisible by 2"
+        self.block = AxialBlock(inplanes=c1, planes=c2 // 2, kernel_size=k)
+
+    def forward(self, x):
+        return self.block(x)
 
 # EOF

@@ -53,3 +53,34 @@ class EfficientAttention(nn.Module):
         attention = reprojected_value + input_
 
         return attention
+
+
+class EfficientAttention_YOLO(nn.Module):
+    """
+    YOLO 专用封装类
+    Args:
+        c1 (int): 输入通道数
+        c2 (int): 输出通道数 (EfficientAttention 是残差结构，通常要求 c1 == c2)
+        head_count (int): 注意力头数
+        key_channels (int): 键值通道数 (必须能被 head_count 整除)
+    """
+
+    def __init__(self, c1, c2, head_count=8, key_channels=64):
+        super().__init__()
+        # EfficientAttention 包含 x + attention，要求输入输出维度一致
+        # 如果 YOLO 传入的 c2 != c1，我们需要警告或处理，这里强制保持一致
+        assert c1 == c2, f"EfficientAttention expects same input/output channels, but got c1={c1}, c2={c2}"
+
+        # 修正原代码潜在的除零 bug：确保 key_channels >= head_count
+        if key_channels < head_count:
+            key_channels = head_count * 4  # 自动调整为一个合理值
+
+        self.att = EfficientAttention(
+            in_channels=c1,
+            key_channels=key_channels,
+            head_count=head_count,
+            value_channels=c1  # 通常 value_channels 保持与输入一致
+        )
+
+    def forward(self, x):
+        return self.att(x)

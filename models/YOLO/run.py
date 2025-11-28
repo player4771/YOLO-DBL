@@ -42,11 +42,6 @@ def train(model:str, data:str):
     rouser.stop()
     return model, results
 
-def val(model, data:str):
-    # Evaluate model performance on the validation set
-    metrics = model.val(data=data)
-    return metrics
-
 
 if __name__ == '__main__':
     data_yaml = "E:/Projects/Datasets/tea_leaf_diseases/data.yaml"

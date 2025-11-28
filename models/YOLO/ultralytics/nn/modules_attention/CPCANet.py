@@ -116,6 +116,20 @@ class RepBlock(nn.Module):
         out = self.conv(out)
         return out
 
+class CPCA_YOLO(nn.Module):
+    def __init__(self, c1, c2):
+        super().__init__()
+        if c1 != c2: # 如果输入输出通道不一致，先用 1x1 卷积调整
+            self.trans = nn.Conv2d(c1, c2, kernel_size=1, stride=1, padding=0)
+        else:
+            self.trans = nn.Identity()
+
+        # RepBlock 负责核心注意力提取
+        self.block = RepBlock(c2, c2, channelAttention_reduce=4)
+
+    def forward(self, x):
+        x = self.trans(x)
+        return self.block(x)
 
 
 #   The common FFN Block used in many Transformer and MLP models.
@@ -566,115 +580,3 @@ class Block_up(nn.Module):
         x = self.bn(x)
         x = self.relu(x)
         return x
-
-class NeuralNetwork(nn.Module):
-    # https://github.com/MIC-DKFZ/nnUNet/blob/nnunetv1/nnunet/network_architecture/neural_network.py
-    def __init__(self):
-        super(NeuralNetwork, self).__init__()
-
-    def get_device(self):
-        if next(self.parameters()).device.type == "cpu":
-            return "cpu"
-        else:
-            return next(self.parameters()).device.index
-
-    def set_device(self, device):
-        if device == "cpu":
-            self.cpu()
-        else:
-            self.cuda(device)
-
-    def forward(self, x):
-        raise NotImplementedError
-
-class SegmentationNetwork(NeuralNetwork):
-    # https://github.com/MIC-DKFZ/nnUNet/blob/nnunetv1/nnunet/network_architecture/neural_network.py
-    def __init__(self):
-        super(NeuralNetwork, self).__init__()
-
-        # if we have 5 pooling then our patch size must be divisible by 2**5
-        self.input_shape_must_be_divisible_by = None  # for example in a 2d network that does 5 pool in x and 6 pool
-        # in y this would be (32, 64)
-
-        # we need to know this because we need to know if we are a 2d or a 3d netowrk
-        self.conv_op = None  # nn.Conv2d or nn.Conv3d
-
-        # this tells us how many channels we have in the output. Important for preallocation in inference
-        self.num_classes = None  # number of channels in the output
-
-        # depending on the loss, we do not hard code a nonlinearity into the architecture. To aggregate predictions
-        # during inference, we need to apply the nonlinearity, however. So it is important to let the newtork know what
-        # to apply in inference. For the most part this will be softmax
-        self.inference_apply_nonlin = lambda x: x  # softmax_helper
-
-        # This is for saving a gaussian importance map for inference. It weights voxels higher that are closer to the
-        # center. Prediction at the borders are often less accurate and are thus downweighted. Creating these Gaussians
-        # can be expensive, so it makes sense to save and reuse them.
-        self._gaussian_3d = self._patch_size_for_gaussian_3d = None
-        self._gaussian_2d = self._patch_size_for_gaussian_2d = None
-
-
-class CPCANet(SegmentationNetwork):
-    def __init__(self,
-                 blocks_num,
-                 crop_size,
-                 convolution_stem_down,
-                 channelAttention_reduce:int,
-                 num_input_channels:int,
-                 embedding_dim:int,
-                 num_classes, 
-                 deep_supervision, 
-                 conv_op=nn.Conv2d):
-        super(CPCANet, self).__init__()
-        
-        # Don't uncomment conv_op
-        self.num_input_channels = num_input_channels
-        self.num_classes = num_classes
-        self.conv_op = conv_op
-        self.do_ds = deep_supervision          
-        self.embed_dim = embedding_dim
-        self.depths=blocks_num
-        self.crop_size = crop_size
-        self.patch_size=[convolution_stem_down,convolution_stem_down]
-        self.channelAttention_reduce = channelAttention_reduce
-        # if window size of the encoder is [7,7,14,7], then decoder's is [14,7,7]. In short, reverse the list and start from the index of 1 
-        self.model_down = encoder(
-                                  pretrain_img_size=self.crop_size,
-                                  embed_dim=self.embed_dim,
-                                  patch_size=self.patch_size,
-                                  depths=self.depths,
-                                  in_chans=self.num_input_channels,
-                                  channelAttention_reduce=self.channelAttention_reduce
-
-        )
-                                        
-        self.decoder = decoder(
-                               pretrain_img_size=self.crop_size,
-                               embed_dim=self.embed_dim,
-                               patch_size=self.patch_size,
-                               depths=[2,2,1],
-                               channelAttention_reduce=self.channelAttention_reduce
-                              )
-   
-        self.final=[]
-        for i in range(len(self.depths)-1):
-            self.final.append(final_patch_expanding(self.embed_dim*2**i,self.num_classes,patch_size=self.patch_size))
-        self.final=nn.ModuleList(self.final)
-        
-    def forward(self, x):
-        seg_outputs=[]
-        skips = self.model_down(x)
-        neck=skips[-1]
-        out=self.decoder(neck,skips)
-        
-        for i in range(len(out)):  
-            seg_outputs.append(self.final[-(i+1)](out[i]))
-        if self.do_ds:
-            # for training
-            return seg_outputs[::-1]
-            #size [[224,224],[112,112],[56,56]]
-
-        else:
-            #for validation and testing
-            return seg_outputs[-1]
-            #size [[224,224]]

@@ -159,18 +159,23 @@ class NonLocalBlock1D(NLBlockND):
         super(NonLocalBlock1D, self).__init__(in_channels, inter_channels=inter_channels, mode=mode,
                                               dimension=1, sub_sample=sub_sample, bn_layer=bn_layer)
 
-
 class NonLocalBlock2D(NLBlockND):
     def __init__(self, in_channels, inter_channels=None, mode='embedded', sub_sample=True, bn_layer=True):
         super(NonLocalBlock2D, self).__init__(in_channels, inter_channels=inter_channels, mode=mode,
                                               dimension=2, sub_sample=sub_sample, bn_layer=bn_layer)
-
 
 class NonLocalBlock3D(NLBlockND):
     def __init__(self, in_channels, inter_channels=None, mode='embedded', sub_sample=True, bn_layer=True):
         super(NonLocalBlock3D, self).__init__(in_channels, inter_channels=inter_channels, mode=mode,
                                               dimension=3, sub_sample=sub_sample, bn_layer=bn_layer)
 
+class NonLocal_YOLO(NonLocalBlock2D):
+    def __init__(self, c1, c2=None, mode='embedded', sub_sample=True):
+        super().__init__(
+            in_channels=c1, inter_channels=c1//2, # 内部通常减半处理
+            mode=mode, sub_sample=sub_sample, bn_layer=True
+        )
+        assert c2 is None or c1 == c2, "requires c1 == c2"
 
 if __name__ == '__main__':
 

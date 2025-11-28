@@ -6,6 +6,17 @@ import threading
 from pathlib import Path
 from numpy.random import randint
 
+__all__ = (
+    'get_dataloader',
+    'find_new_dir',
+    'WindowsRouser',
+    'this_time',
+    'typename',
+    'avg_time',
+    'check_time',
+    'rand_rgb',
+)
+
 def get_dataloader(cfg:dict, dataset, transform, is_train:bool, collate_fn): # -> dataloader
     """
     cfg requires:\n
@@ -84,7 +95,7 @@ def avg_time(module, *args, repeat=10):
     total_time = time.perf_counter() - start_time
     return total_time, result
 
-def check(module, *args, repeat=10, log=True, adjust=25):
+def check_time(module, *args, repeat=10, log=True, adjust=25):
     print(f"{typename(module)}:".ljust(adjust), end='')
     total_time, result = avg_time(module, *args, repeat=repeat)
     if log:

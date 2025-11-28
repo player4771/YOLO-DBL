@@ -1019,6 +1019,18 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             C3k2_EAMC,
             EMA,
             SELayer,
+            EdgeAwareAttention,
+            EdgeAwareAttentionV2,
+            AxialBlock_YOLO,
+            BAM_YOLO,
+            CPCA_YOLO,
+            DeBiAttention_YOLO,
+            EfficientAttention_YOLO,
+            FullyAttentionalBlock_YOLO,
+            HiLo_YOLO,
+            NonLocal_YOLO,
+            SwinTransformer,
+            Outlooker_YOLO,
         }:
             c1, c2 = ch[f], args[0]
             if c2 != nc:  # if c2 not equal to number of classes (i.e. for Classify() output)
@@ -1129,10 +1141,16 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
         elif m in [CAA, EUCB]:
             c2 = ch[f]
             args = [c2, *args]
-        elif m is DySample:
+        elif m in [DySample]:
             c1 = ch[f]
             c2 = c1
             args = [c1, *args]
+        elif m in [CoordAttention, GAM]:
+            c1, c2 = ch[f], ch[f]
+            args = [c1, c2, *args]
+        elif m is ELA:
+            c1, c2 = ch[f], ch[f]
+            args = [c1, *args[1:]]
         else:
             c2 = ch[f]
 
