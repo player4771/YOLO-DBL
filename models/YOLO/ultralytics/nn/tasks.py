@@ -1007,14 +1007,14 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             A2C2f,
             DSC3k2,
             DSConv,
-            FEM, #FFCA-YOLO
-            C2f_PIG, #PCPE-YOLO
-            C3k2_EFE, #IRSTD-YOLO x2
+
+            FEM,
+            C2f_PIG,
+            C3k2_EFE,
             SPDConv,
-            CARAFE, #YOLO-RACE x2
+            CARAFE,
             ResBlock_CBAM,
-            C2f_ScConv, #YOLO-EMAC x4
-            #C3k2_ScConv,
+            C2f_ScConv,
             M2C2f,
             C3k2_EAMC,
             EMA,
@@ -1031,6 +1031,16 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             NonLocal_YOLO,
             SwinTransformer,
             Outlooker_YOLO,
+            BiFormerNCHW,
+            DAT_YOLO,
+            SLA,
+            PSAModule,
+            LSKblock,
+            SCAM,
+            CoordAttention,
+            GAM,
+            ELA,
+            CAA,
         }:
             c1, c2 = ch[f], args[0]
             if c2 != nc:  # if c2 not equal to number of classes (i.e. for Classify() output)
@@ -1041,7 +1051,7 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
                     max(round(min(args[2], max_channels // 2 // 32)) * width, 1) if args[2] > 1 else args[2]
                 )  # num heads
 
-            args = [c1, c2, *args[1:]]
+            args = [c1, c2, *args[1:]] #需要模型init的前两个参数分别为c1和c2
             if m in {
                 BottleneckCSP,
                 C1,
@@ -1059,11 +1069,11 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
                 C2PSA,
                 A2C2f,
                 DSC3k2,
-                C2f_PIG, #PCPE-YOLO
-                C3k2_EFE, #IRSTD-YOLO x2
+
+                C2f_PIG,
+                C3k2_EFE,
                 SPDConv,
-                C2f_ScConv, #YOLO-EMAC
-                #C3k2_ScConv,
+                C2f_ScConv,
                 M2C2f,
                 C3k2_EAMC,
             }:
@@ -1129,7 +1139,7 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
                 c2 =c1
         elif m is FullPAD_Tunnel:
             c2 = ch[f[0]]
-        elif m in [SCAM, Multibranch]:
+        elif m in [Multibranch]:
             c2 = ch[f]
             args = [c2]
         elif m is FFM_Concat2:
@@ -1138,19 +1148,12 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
         elif m is FFM_Concat3:
             c2 = sum(ch[x] for x in f)
             args = [args[0], c2 // 4, c2 // 2, c2 // 4]
-        elif m in [CAA, EUCB]:
+        elif m in [EUCB]:
             c2 = ch[f]
             args = [c2, *args]
         elif m in [DySample]:
-            c1 = ch[f]
-            c2 = c1
+            c1, c2 = ch[f], ch[f]
             args = [c1, *args]
-        elif m in [CoordAttention, GAM]:
-            c1, c2 = ch[f], ch[f]
-            args = [c1, c2, *args]
-        elif m is ELA:
-            c1, c2 = ch[f], ch[f]
-            args = [c1, *args[1:]]
         else:
             c2 = ch[f]
 

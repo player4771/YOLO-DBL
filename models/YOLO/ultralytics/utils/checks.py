@@ -286,6 +286,7 @@ def check_pip_update_available():
     Returns:
         (bool): True if an update is available, False otherwise.
     """
+    return #stop it.
     if ONLINE and IS_PIP_PACKAGE:
         try:
             from ultralytics import __version__

@@ -101,7 +101,7 @@ class SparseLinearAttention(nn.Module):
 
 class SLA(SparseLinearAttention):
     """SparseLinearAttention的包装类，区别在于forward函数接受正常的NCHW向量"""
-    def __init__(self, in_channels, num_heads=4, head_dim=None, **kwargs):
+    def __init__(self, in_channels, out_channels=None, num_heads=4, head_dim=None, **kwargs):
         if head_dim is None:
             assert in_channels % num_heads == 0, f"in_channels({in_channels}) % num_heads({num_heads}) != 0"
             head_dim = in_channels // num_heads
@@ -130,6 +130,12 @@ class SLA(SparseLinearAttention):
             x: input tensor of shape (B, C, H, W).
             return_sparsity: whether to return the actual sparsity.
         """
+        if x.device.type == 'cpu': #SLA依赖于triton，只能使用GPU
+            o = self.out_proj(x) #仅经过输出投影以保持计算图（如果需要）并确保通道数处理逻辑一致
+            if return_sparsity:
+                return o, 0.0
+            return o
+
         B, C, H, W = x.shape
         L_seq = H * W  # 序列长度
 

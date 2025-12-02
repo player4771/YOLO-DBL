@@ -11,7 +11,7 @@ torch.hub.set_dir('./') #修改缓存路径
 from model import RCNN
 from utils import selective_search, PreprocessedRCNNDataset
 
-from global_utils import EarlyStopping, AlbumentationsTransform, find_new_dir, this_time
+from global_utils import EarlyStopping, AlbumentationsTransform, find_new_dir, time_now_str
 
 def create_training_samples_vectorized(proposals, gt_boxes, gt_labels):
     if len(gt_boxes) == 0:
@@ -144,7 +144,7 @@ def train(**kwargs):
     output_dir.mkdir(parents=True, exist_ok=True)
     model_output = output_dir / 'best.pth'
 
-    cfg['start_time'] = this_time()
+    cfg['start_time'] = time_now_str()
     with open(output_dir / 'args.yaml', 'w') as f:
         yaml.dump(cfg, f, default_flow_style=False)
 

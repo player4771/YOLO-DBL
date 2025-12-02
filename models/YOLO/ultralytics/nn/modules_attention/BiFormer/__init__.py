@@ -1,6 +1,6 @@
 
 from ._common import Attention, AttentionLePE, nchwAttentionLePE
-from .biformer import BiFormer, biformer_tiny, biformer_small, biformer_base, biformer
+from .biformer import BiFormer, biformer
 from .biformer_stl import BiFormerSTL
 from .biformer_stl_nchw import BiFormerBlock, nchwBiFormerSTL, biformer_stl_nchw
 from .bra_legacy import BiLevelRoutingAttention

@@ -4,13 +4,13 @@ from torch import nn
 
 
 class SELayer(nn.Module):
-    def __init__(self, channel, reduction=16):
+    def __init__(self, in_channels, out_channels=None, reduction=16):
         super(SELayer, self).__init__()
         self.avg_pool = nn.AdaptiveAvgPool2d(1) #自适应平均池化，输出固定为B*C*1*1
         self.fc = nn.Sequential(
-            nn.Linear(channel, channel // reduction, bias=False), #把channel的最后一维//r
+            nn.Linear(in_channels, in_channels // reduction, bias=False), #把channel的最后一维//r
             nn.ReLU(inplace=True), #非线性
-            nn.Linear(channel // reduction, channel, bias=False), #把channel的最后一维缩放回去
+            nn.Linear(in_channels // reduction, in_channels, bias=False), #把channel的最后一维缩放回去
             nn.Sigmoid() #挤压到0-1之间，防止梯度消失或爆炸。注：不是线性缩放也不是标准化，只是基于sigmoid函数的挤压。
         )
 

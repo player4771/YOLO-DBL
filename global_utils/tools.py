@@ -10,7 +10,7 @@ __all__ = (
     'get_dataloader',
     'find_new_dir',
     'WindowsRouser',
-    'this_time',
+    'time_now_str',
     'typename',
     'avg_time',
     'check_time',
@@ -78,7 +78,7 @@ class WindowsRouser:
         ctypes.windll.kernel32.SetThreadExecutionState(0x80000000)
         self.activated = False
 
-def this_time() -> str:
+def time_now_str() -> str:
     return time.strftime('%Y/%m/%d %H:%M:%S', time.localtime())
 
 def typename(class_):

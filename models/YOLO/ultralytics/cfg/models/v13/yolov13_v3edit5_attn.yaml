@@ -2,7 +2,7 @@ nc: 80 # number of classes
 scales: # model compound scaling constants, i.e. 'model=yolov13n.yaml' will call yolov13.yaml with scale 'n'
   # [depth, width, max_channels]
   n: [0.50, 0.25, 1024]   # Nano
-  s: [0.50, 0.50, 1024]   # Small
+  s: [0.50, 0.50, 1024]   # Small <- use this
   l: [1.00, 1.00, 512]    # Large
   x: [1.00, 1.50, 512]    # Extra Large
 
@@ -16,16 +16,17 @@ backbone: #v13 -> v3
   - [ -1, 1, Conv, [ 256, 3, 2 ] ] # 5-P3/8
   - [ -1, 8, Bottleneck, [ 256 ] ]
   # 添加 1x1 卷积将 P3/8 的通道从 256 提升至 512，以匹配 v13 head 的需求
-  - [-1, 1, Conv, [512, 1, 1]] # 7 (适配后的 P3/8, 512 ch)
+  - [ -1, 1, Conv, [ 512, 1, 1 ] ] # 7 (适配后的 P3/8, 512 ch)
   - [ -1, 1, Conv, [ 512, 3, 2 ] ] # 7-P4/16
   - [ -1, 8, Bottleneck, [ 512 ] ]
   - [ -1, 1, Conv, [ 1024, 3, 2 ] ] # 9-P5/32
   - [ -1, 4, Bottleneck, [ 1024 ] ] # 10
 
-head: #DSC3k2 -> Bottleneck
+head: #DSC3k2 -> Bottleneck, SELayer
   - [[7, 9, 11], 2, HyperACE, [512, 8, True, True, 0.5, 1, "both"]] # 12
   - [-1, 1, nn.Upsample, [None, 2, "nearest"]] # 13
   - [12, 1, DownsampleConv, []] # 14
+
   - [[9, 12], 1, FullPAD_Tunnel, []] # 15
   - [[7, 13], 1, FullPAD_Tunnel, []] # 16
   - [[11, 14], 1, FullPAD_Tunnel, []] # 17
@@ -40,19 +41,32 @@ head: #DSC3k2 -> Bottleneck
   - [-1, 2, Bottleneck, [256, True]] # 24
   - [13, 1, Conv, [256, 1, 1]] # 25
   - [[24, 25], 1, FullPAD_Tunnel, []] # 26
-  - [-1, 1, EMA, [256]] # 27
+  - [-1, 1, EUCB, [256]] # 27
 
   - [-1, 1, Conv, [256, 3, 2]] # 28
   - [[-1, 21], 1, Concat, [1]] # 29
   - [-1, 2, Bottleneck, [512, True]] # 30
   - [[-1, 12], 1, FullPAD_Tunnel, []] # 31
-  - [-1, 1, EMA, [512]] # 32
+  - [-1, 1, EUCB, [512]] # 32
 
   - [30, 1, Conv, [512, 3, 2]]# 33
   - [[-1, 17], 1, Concat, [1]] # 34
   - [-1, 2, Bottleneck, [1024,True]]  # 35
   - [[-1, 14], 1, FullPAD_Tunnel, []] # 36
-  - [-1, 1, EMA, [1024]] # 37
+  - [-1, 1, EUCB, [1024]] # 37
 
   # Detect(P3, P4, P5)
   - [[27, 32, 37], 1, Detect, [nc]] # 38
+
+#result format: Module(round(max/stopped/earlystopped), mAP50-95)
+#vanilla(train21, yolov13_v3edit5.yaml): 300, max, 0.883
+#group1: CoordAttention(209, earlystopped, 0.86), ECALayer(255, earlystopped, 0.885),
+#        EMA(103, stopped, 0.723), GAM(130, stopped, 0.788), MLCA(100, stopped, 0.698),
+#        SELayer(100, stopped, 0.712), SimAM(155, stopped, 0.82)
+#group2: AxialBlock_YOLO(234, stopped, 0.76), BAM_YOLO(174, stopped, 0.837),
+#        CPCA_YOLO(109, stopped, 0.729), DeBiAttention_YOLO(0, cuda out of memory),
+#        EfficientAttention_YOLO(255, stopped, 0.885), FullyAttentionalBlock_YOLO(0, cuda out of memory),
+#        HiLo_YOLO(0, cuda out of memory), NonLocal_YOLO(),
+#        SwinTransformer(110, stopped, 0.723), Outlooker_YOLO(), ELA(150, stopped, 0.816)
+#group3: BiFormerNCHW(), DAT_YOLO(), SLA(), PSAModule(), LSKblock()
+#group4: ECALayer, GAM, BAM_YOLO, EfficientAttention_YOLO,

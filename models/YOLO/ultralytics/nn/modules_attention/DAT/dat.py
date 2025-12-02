@@ -939,6 +939,83 @@ class DAT(nn.Module):
         return x
 
 
+class DAT_YOLO(nn.Module):
+    """
+    Arguments:
+        c1 (int): 输入/输出通道数 (ResidualGroup 是残差结构，通常要求 c1 == c2)
+        num_heads (int): 注意力头数
+        depth (int): DATB 的堆叠数量
+        split_size (tuple): 空间窗口大小
+    """
+
+    def __init__(self, c1, c2=None, num_heads=4, depth=2, split_size=(8, 8)):
+        super().__init__()
+        # 1. 通道调整
+        # ResidualGroup 内部含残差连接，通常要求输入输出通道一致。
+        # 如果 YOLO 配置中 c1 != c2，我们需要使用 1x1 卷积调整输入维度。
+        self.proj = nn.Identity()
+
+        # 2. 预处理层 (NCHW -> NL C)
+        # DAT 内部期望输入是 (B, L, C) 且带 LayerNorm
+        self.before_RG = nn.Sequential(
+            Rearrange('b c h w -> b (h w) c'),
+            nn.LayerNorm(c1)
+        )
+
+        # 3. 实例化 ResidualGroup
+        # 注意：DAT 是为 SR 设计的，没有下采样，所以 reso 参数主要用于内部 Window 划分
+        # 这里给一个默认的大分辨率即可，或者由 forward 动态传入 H, W
+        self.rg = ResidualGroup(
+            dim=c1,
+            reso=640,  # 只是用于初始化 mask，实际 forward 会根据输入 size 动态计算
+            num_heads=num_heads,
+            split_size=split_size,
+            depth=depth,
+            expansion_factor=4.,
+            qkv_bias=True,
+            drop=0.,
+            attn_drop=0.,
+            drop_paths=[0.] * depth,  # 简化 drop_path
+            act_layer=nn.GELU,
+            norm_layer=nn.LayerNorm,
+            resi_connection='1conv'
+        )
+
+        # 4. 后处理层 (NL C -> NCHW)
+        # ResidualGroup 输出的是 (B, H*W, C)，我们需要 reshape 回 NCHW
+        # 但 ResidualGroup 的 forward 已经在最后做了 reshape (看源码 class ResidualGroup)
+        # 不过它 reshape 回的是 (B, C, H, W)，所以我们不需要额外操作。
+
+        # 修正：检查源码 class ResidualGroup 的 forward:
+        # x = rearrange(x, "b (h w) c -> b c h w", h=H, w=W).contiguous()
+        # x = self.conv(x)
+        # x = rearrange(x, "b c h w -> b (h w) c")  <-- 注意这里！它又变回了 (B, L, C)
+        # x = res + x
+        # 所以最终输出是 (B, L, C)，我们需要把它变回 (B, C, H, W)
+
+    def forward(self, x):
+        if x.shape[0] == 1:
+            return x
+        # x: (B, C, H, W)
+        B, C, H, W = x.shape
+        x_size = [H, W]
+
+        # 1. 投影
+        x = self.proj(x)
+
+        # 2. 预处理 (B, C, H, W) -> (B, L, C)
+        x_in = self.before_RG(x)
+
+        # 3. ResidualGroup 前向
+        # 注意：ResidualGroup.forward 需要 (x, x_size)
+        x_out = self.rg(x_in, x_size)
+
+        # 4. 后处理 (B, L, C) -> (B, C, H, W)
+        x_out = rearrange(x_out, "b (h w) c -> b c h w", h=H, w=W)
+
+        return x_out
+
+
 if __name__ == '__main__':
     upscale = 1
     height = 64
@@ -954,7 +1031,7 @@ if __name__ == '__main__':
         expansion_factor=2,
         resi_connection='1conv',
         split_size=[8,16],
-                ).cuda().eval()
+    ).cuda().eval()
 
     print(height, width)
 

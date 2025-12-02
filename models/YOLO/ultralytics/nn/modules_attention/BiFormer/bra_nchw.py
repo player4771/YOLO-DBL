@@ -31,7 +31,7 @@ class nchwBRA(nn.Module):
 
     Current implementation is more reasonable, hence we do not keep backward numerical compatiability
     """
-    def __init__(self, dim, num_heads=8, n_win=7, qk_scale=None, topk=4,  side_dwconv=3, auto_pad=False, attn_backend='torch'):
+    def __init__(self, dim, c2=None, num_heads=8, n_win=7, qk_scale=None, topk=4,  side_dwconv=3, auto_pad=False, attn_backend='torch'):
         super().__init__()
         # local attention setting
         self.dim = dim

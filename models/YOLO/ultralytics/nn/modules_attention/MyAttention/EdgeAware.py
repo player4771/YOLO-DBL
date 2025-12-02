@@ -6,20 +6,20 @@ class EdgeAwareAttention(nn.Module):
     """
     可以正常使用，对精度没有明显负面影响。
     """
-    def __init__(self, channels, reduction=16, ksize=7):
+    def __init__(self, in_channels, out_channels=None, reduction=16, ksize=7):
         super().__init__()
-        self.channels = channels
+        self.channels = in_channels
         # 空间注意力：输入4通道 (avgX, maxX, avgG, maxG)
         self.spatial = nn.Conv2d(4, 1, ksize, padding=ksize//2, bias=True)
         # 通道注意力：MLP
-        hidden = max(8, channels // reduction)
+        hidden = max(8, in_channels // reduction)
         self.mlp = nn.Sequential(
-            nn.Linear(channels, hidden, bias=False),
+            nn.Linear(in_channels, hidden, bias=False),
             nn.ReLU(inplace=True),
-            nn.Linear(hidden, channels, bias=False)
+            nn.Linear(hidden, in_channels, bias=False)
         )
         # c_gain和s_gain分别为通道和空间注意力的增益
-        self.c_gain = nn.Conv2d(channels, channels, kernel_size=1, bias=True)
+        self.c_gain = nn.Conv2d(in_channels, in_channels, kernel_size=1, bias=True)
         self.s_gain = nn.Conv2d(1, 1, kernel_size=1, bias=True)
 
         # 注册 Sobel 作为 buffer，随设备/精度移动
@@ -75,7 +75,8 @@ class EdgeAwareAttentionV2(nn.Module):
     """
     def __init__(
         self,
-        channels: int,
+        in_channels: int,
+        out_channels=None,
         reduction: int = 16,
         ksize: int = 7,
         kernel_bank=("sobel", "scharr", "prewitt"),  # 多算子银行
@@ -87,7 +88,7 @@ class EdgeAwareAttentionV2(nn.Module):
         super().__init__()
         assert kernel_size == 3, "此示例实现了 3x3 核，如需其它尺寸可按同样思路扩展。"
         assert alpha_mode in ("scalar", "map")
-        self.channels = channels
+        self.channels = in_channels
         self.num_k = len(kernel_bank)
         self.kernel_size = kernel_size
         self.charbonnier_eps = charbonnier_eps
@@ -97,11 +98,11 @@ class EdgeAwareAttentionV2(nn.Module):
         self.spatial = nn.Conv2d(4, 1, ksize, padding=ksize // 2, bias=True)
 
         # --- 通道注意力 MLP（输入为通道级边缘统计） ---
-        hidden = max(8, channels // reduction)
+        hidden = max(8, in_channels // reduction)
         self.mlp = nn.Sequential(
-            nn.Linear(channels, hidden, bias=False),
+            nn.Linear(in_channels, hidden, bias=False),
             nn.ReLU(inplace=True),
-            nn.Linear(hidden, channels, bias=False)
+            nn.Linear(hidden, in_channels, bias=False)
         )
 
         # --- (2) 多算子可学习边缘核 ---
@@ -141,9 +142,9 @@ class EdgeAwareAttentionV2(nn.Module):
 
         # beta：基于通道边缘统计（B,C） -> 逐通道非负增益
         self.beta_mlp = nn.Sequential(
-            nn.Linear(channels, hidden, bias=False),
+            nn.Linear(in_channels, hidden, bias=False),
             nn.ReLU(inplace=True),
-            nn.Linear(hidden, channels, bias=False)
+            nn.Linear(hidden, in_channels, bias=False)
         )
 
     # ----------------------------- 辅助函数 -----------------------------
@@ -255,7 +256,7 @@ if __name__ == '__main__':
     channels = input.shape[-3]
     assert isinstance(input, torch.Tensor), TypeError(f'Invalid type: {type(input)}, expected torch.Tensor')
 
-    model = EdgeAwareAttentionV2(channels=channels, ksize=3)
+    model = EdgeAwareAttentionV2(in_channels=channels, ksize=3)
     with torch.no_grad():
         output = model.to('cuda').eval()(input.to('cuda'))
 

@@ -1,5 +1,4 @@
 import torch
-torch.set_float32_matmul_precision('high')
 
 from ultralytics.nn.modules import *
 from ultralytics.nn.modules_upsample import *

@@ -6,7 +6,7 @@ torch.hub.set_dir('./') #修改缓存路径
 
 from model import FastRCNNFPN as FastRCNN
 from utils import evaluate, FastRCNNCollator, compute_loss
-from global_utils import find_new_dir, EarlyStopping, get_dataloader, YoloDataset, AlbumentationsTransform, this_time
+from global_utils import find_new_dir, EarlyStopping, get_dataloader, YoloDataset, AlbumentationsTransform, time_now_str
 
 
 def train(**kwargs):
@@ -39,7 +39,7 @@ def train(**kwargs):
     output_dir.mkdir(parents=True, exist_ok=True)
     model_output = Path(output_dir, 'best.pth')
 
-    cfg['start_time'] = this_time()
+    cfg['start_time'] = time_now_str()
     with open(output_dir/'args.yaml', 'w') as outfile:
         yaml.dump(cfg, outfile)
 

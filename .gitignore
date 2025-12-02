@@ -3,11 +3,10 @@
 /models/RCNN/checkpoints/
 /models/Fast-RCNN/runs/
 /models/Fast-RCNN/checkpoints/
-/models/SSD/runs/
-/models/SSD/checkpoints/
-/models/SSD_VOC/
 /models/Faster-RCNN/runs/
 /models/Faster-RCNN/checkpoints/
+/models/SSD/runs/
+/models/SSD/checkpoints/
 /models/YOLO/yolov13n.pt
 /models/YOLO/yolov13s.pt
 /models/YOLO/runs/

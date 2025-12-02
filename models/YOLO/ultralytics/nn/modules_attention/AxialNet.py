@@ -729,27 +729,9 @@ def logo(pretrained=False, **kwargs):
     model = medt_net(AxialBlock,AxialBlock, [1, 2, 4, 1], s= 0.125, **kwargs)
     return model
 
-class AxialBlock_YOLO(nn.Module):
-    """
-    Wrapper for AxialBlock to fit YOLO's argument style.
-    Args:
-        c1 (int): Input channels
-        c2 (int): Output channels
-        k (int): kernel_size, MUST match the feature map size at this layer!
+class AxialBlock_YOLO(AxialBlock):
+    def __init__(self, c1:int, c2=None, k=20): #c1 == c2
+        super().__init__(inplanes=c1, planes=c1 // 2, kernel_size=k)
 
-    YAML示例:
-    - [-1, 1, AxialBlockYOLO, [256, 80]]
-    - [-1, 1, AxialBlockYOLO, [512, 40]]
-    - [-1, 1, AxialBlockYOLO, [1024, 20]]
-    """
-    def __init__(self, c1, c2, k=20, groups=8):
-        super().__init__()
-        # AxialBlock 的输出通道是 planes * expansion(2)。
-        # 若输出c2，则传入的planes为c2//2
-        assert c2 % 2 == 0, "AxialBlock output channels (c2) must be divisible by 2"
-        self.block = AxialBlock(inplanes=c1, planes=c2 // 2, kernel_size=k)
-
-    def forward(self, x):
-        return self.block(x)
 
 # EOF
