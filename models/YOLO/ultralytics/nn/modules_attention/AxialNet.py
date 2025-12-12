@@ -730,7 +730,7 @@ def logo(pretrained=False, **kwargs):
     return model
 
 class AxialBlock_YOLO(AxialBlock):
-    def __init__(self, c1:int, c2=None, k=20): #c1 == c2
+    def __init__(self, c1:int, k=20): #c1 == c2
         super().__init__(inplanes=c1, planes=c1 // 2, kernel_size=k)
 
 

@@ -1,0 +1,70 @@
+nc: 80 # number of classes
+scales: # model compound scaling constants, i.e. 'model=yolov13n.yaml' will call yolov13.yaml with scale 'n'
+  # [depth, width, max_channels]
+  n: [0.50, 0.25, 1024]   # Nano
+  s: [0.50, 0.50, 1024]   # Small <- use this
+  l: [1.00, 1.00, 512]    # Large
+  x: [1.00, 1.50, 512]    # Extra Large
+
+backbone: #v13 -> v3
+  # [from, repeats, module, args]
+  - [ -1, 1, Conv, [ 32, 3, 1 ] ] # 0
+  - [ -1, 1, Conv, [ 64, 3, 2 ] ] # 1(P1/2)
+  - [ -1, 1, Bottleneck, [ 64 ] ]
+  - [ -1, 1, Conv, [ 128, 3, 2 ] ] # 3(P2/4)
+  - [ -1, 2, Bottleneck, [ 128 ] ]
+  - [ -1, 1, Conv, [ 256, 3, 2 ] ] # 5(P3/8)
+  - [ -1, 8, Bottleneck, [ 256 ] ]
+  - [ -1, 1, Conv, [ 512, 1, 1 ] ] # 7(P3/8, 512ch)
+  - [ -1, 1, Conv, [ 512, 3, 2 ] ] # 8(P4/16)
+  - [ -1, 8, Bottleneck, [ 512 ] ]
+  - [ -1, 1, Conv, [ 1024, 3, 2 ] ] # 10(P5/32)
+  - [ -1, 4, Bottleneck, [ 1024 ] ] # 11
+
+head: #DSC3k2 -> Bottleneck
+  - [[7, 9, 11], 2, HyperACE, [512, 8, True, True]] # 12
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]] # 13
+  - [12, 1, DownsampleConv, []] # 14
+
+  - [[ 9, 12], 1, FullPAD_Tunnel, []] # 15
+  - [[ 7, 13], 1, FullPAD_Tunnel, []] # 16
+  - [[11, 14], 1, FullPAD_Tunnel, []] # 17
+
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]] # 18
+  - [[-1, 15], 1, Concat, [1]] # 19
+  - [-1, 2, Bottleneck, [512, True]] # 20
+  - [[-1, 12], 1, FullPAD_Tunnel, []] # 21
+
+  - [20, 1, nn.Upsample, [None, 2, "nearest"]] # 22
+  - [[-1, 16], 1, Concat, [1]] # 23
+  - [-1, 2, Bottleneck, [256, True]] # 24
+  - [-1, 1, CBAM, [256]] # 25
+  - [13, 1, Conv, [256, 1, 1]] # 26
+  - [[24, 25], 1, FullPAD_Tunnel, []] # 27
+
+  - [-1, 1, Conv, [256, 3, 2]] # 28
+  - [[-1, 21], 1, Concat, [1]] # 29
+  - [-1, 2, Bottleneck, [512, True]] # 30
+  - [-1, 1, CBAM, [512]] # 31
+  - [[-1, 12], 1, FullPAD_Tunnel, []] # 32
+
+  - [30, 1, Conv, [512, 3, 2]]# 33
+  - [[-1, 17], 1, Concat, [1]] # 34
+  - [-1, 2, Bottleneck, [1024,True]]  # 35
+  - [-1, 1, CBAM, [1024]] # 36
+  - [[-1, 14], 1, FullPAD_Tunnel, []] # 37
+
+  # Detect(P3, P4, P5)
+  - [[27, 32, 37], 1, Detect, [nc]] # 38
+
+#result format: Module(round(max/stopped/earlystopped), mAP50-95)
+#vanilla:
+#group1: CoordAttention(), ECALayer(),
+#        EMA(), GAM(), MLCA(),
+#        SELayer(), SimAM(), CBAM()
+#        AxialBlock_YOLO(), BAM_YOLO(),
+#        CPCA_YOLO(), DeBiAttention_YOLO(),
+#        EfficientAttention_YOLO(), FullyAttentionalBlock_YOLO(),
+#        HiLo_YOLO(), NonLocal_YOLO(),
+#        SwinTransformer(), Outlooker_YOLO(), ELA()
+#        BiFormerNCHW(), DAT_YOLO(), SLA(), PSAModule(), LSKblock()

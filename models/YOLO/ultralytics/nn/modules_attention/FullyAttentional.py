@@ -129,8 +129,3 @@ class FullyAttentionalBlock(nn.Module):
         out = self.gamma * (full_aug_h + full_aug_w) + x
         out = self.conv(out)
         return out
-
-class FullyAttentionalBlock_YOLO(FullyAttentionalBlock):
-    def __init__(self, c1:int, c2:int=None):
-        super().__init__(c1)
-        assert c2 is None or c1 == c2, "FullyAttentionalBlock requires c1 == c2"

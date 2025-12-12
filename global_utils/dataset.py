@@ -1,5 +1,6 @@
 import cv2
 import torch
+from PIL import Image
 from pathlib import Path
 import matplotlib.pyplot as plt
 from torchvision.tv_tensors import BoundingBoxes
@@ -7,12 +8,12 @@ from torchvision.tv_tensors import BoundingBoxes
 from .tools import rand_rgb
 
 __all__ = (
-    'YoloDataset',
+    'YOLODataset',
     'label_image',
     'label_image_tea',
 )
 
-class YoloDataset(torch.utils.data.Dataset):
+class YOLODataset(torch.utils.data.Dataset):
     """用于读取 YOLO 格式数据集的 PyTorch Dataset 类。"""
 
     def __init__(self, img_dir:str|Path, label_dir:str|Path, transform=None):
@@ -33,10 +34,9 @@ class YoloDataset(torch.utils.data.Dataset):
         img_path = self.img_files[idx]
         label_path = self.label_files[img_path.stem]
 
-        # 读取图片
         image = cv2.imread(str(img_path))
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        img_h, img_w, _ = image.shape # height, width, channels
+        h_raw, w_raw, _ = image.shape  # height, width, channels
 
         # 读取 YOLO 标注
         boxes = []
@@ -51,26 +51,26 @@ class YoloDataset(torch.utils.data.Dataset):
                 class_id, x_center, y_center, w, h = map(float, parts)
 
                 # 转换为VOC格式: [xmin, ymin, xmax, ymax]
-                x_min = (x_center - w / 2) * img_w
-                y_min = (y_center - h / 2) * img_h
-                x_max = (x_center + w / 2) * img_w
-                y_max = (y_center + h / 2) * img_h
+                x_min = (x_center - w / 2) * w
+                y_min = (y_center - h / 2) * h
+                x_max = (x_center + w / 2) * w
+                y_max = (y_center + h / 2) * h
 
                 boxes.append([x_min, y_min, x_max, y_max])
                 # 注意：YOLO类别索引从0开始，SSD的有效类别从1开始（0是背景），所以要+1
                 labels.append(int(class_id) + 1)
 
-
+        w_new, h_new = w_raw, h_raw
         if self.transform:
             transformed = self.transform(image, bboxes=boxes, class_labels=labels)
             image = transformed['image']
             boxes = transformed['bboxes']
             labels = transformed['class_labels']
-            _, img_h, img_w = image.shape #通道顺序会发生变化，详见transforms.py
+            _, h_new, w_new = image.shape #通道顺序会发生变化，详见transforms.py
 
         if boxes:# 转换为 Tensor
             boxes = torch.as_tensor(boxes, dtype=torch.float32)
-            boxes = BoundingBoxes(boxes, format="xyxy", canvas_size=(img_h, img_w))
+            boxes = BoundingBoxes(boxes, format="xyxy", canvas_size=(h_new, w_new))
             labels = torch.as_tensor(labels, dtype=torch.int64)
         else:
             boxes = torch.zeros((0, 4), dtype=torch.float32)
@@ -83,13 +83,59 @@ class YoloDataset(torch.utils.data.Dataset):
             'boxes': boxes,
             'labels': labels,
             'image_id': torch.tensor([idx]),
-            'orig_size': torch.tensor([img_h, img_w]),
+            'orig_size': torch.tensor([h_raw, w_raw]),
             'area': area,
             'iscrowd': iscrowd,
         }
 
         return image, target
 
+    def get_targets(self, idx):
+        img_path = self.img_files[idx]
+        label_path = self.label_files[img_path.stem]
+
+        boxes, labels = [], []
+        if label_path.exists():
+            with open(label_path, 'r') as f:
+                for line in f:
+                    parts = line.strip().split()
+                    if len(parts) != 5:
+                        raise ValueError(f"Invalid label format in {label_path}, got {len(parts)}/5 parts")
+                    class_id, x_c, y_c, w, h = map(float, parts)
+
+                    if self.transform is not None: #这里是为了让box的分辨率与resize图像匹配
+                        w, h = self.transform.resize_w, self.transform.resize_h
+                    else:
+                        with Image.open(img_path) as img:
+                            w, h = img.size
+
+                    x_min = (x_c - w / 2) * w
+                    y_min = (y_c - h / 2) * h
+                    x_max = (x_c + w / 2) * w
+                    y_max = (y_c + h / 2) * h
+
+                    boxes.append([x_min, y_min, x_max, y_max])
+                    labels.append(int(class_id) + 1)
+
+        if boxes:
+            boxes = torch.as_tensor(boxes, dtype=torch.float32)
+            labels = torch.as_tensor(labels, dtype=torch.int64)
+            area = (boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1])
+        else:
+            boxes = torch.zeros((0, 4), dtype=torch.float32)
+            labels = torch.zeros(0, dtype=torch.int64)
+            area = torch.zeros(0, dtype=torch.float32)
+
+        iscrowd = torch.zeros((len(labels),), dtype=torch.int64)
+
+        return {
+            'boxes': boxes,
+            'labels': labels,
+            'image_id': torch.tensor([idx]),
+            'orig_size': torch.tensor([h, w]),
+            'area': area,
+            'iscrowd': iscrowd,
+        }
 
 def label_image(img_file:str|Path, label_file:str|Path=None, class_names:tuple|list=None, colors:tuple|list=None):
     if label_file is None:

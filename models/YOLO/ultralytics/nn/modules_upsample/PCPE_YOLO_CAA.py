@@ -4,14 +4,14 @@ import torch
 from ..modules.conv import Conv
 
 class CAA(nn.Module):
-    def __init__(self, c1, c2=None, h_kernel_size=11, v_kernel_size=11) -> None:
+    def __init__(self, ch, h_kernel_size=11, v_kernel_size=11) -> None:
         super().__init__()
 
         self.avg_pool = nn.AvgPool2d(7, 1, 3)
-        self.conv1 = Conv(c1, c1)
-        self.h_conv = nn.Conv2d(c1, c1, (1, h_kernel_size), 1, (0, h_kernel_size // 2), 1, c1)
-        self.v_conv = nn.Conv2d(c1, c1, (v_kernel_size, 1), 1, (v_kernel_size // 2, 0), 1, c1)
-        self.conv2 = Conv(c1, c1)
+        self.conv1 = Conv(ch, ch)
+        self.h_conv = nn.Conv2d(ch, ch, (1, h_kernel_size), 1, (0, h_kernel_size // 2), 1, ch)
+        self.v_conv = nn.Conv2d(ch, ch, (v_kernel_size, 1), 1, (v_kernel_size // 2, 0), 1, ch)
+        self.conv2 = Conv(ch, ch)
         self.act = nn.Sigmoid()
 
 

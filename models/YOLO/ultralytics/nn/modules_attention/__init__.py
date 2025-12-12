@@ -12,12 +12,12 @@ from .ECA import ECALayer, ECALayer_ns
 from .EfficientAttention import EfficientAttention, EfficientAttention_YOLO
 from .EMA import EMA
 from .EPSANet import PSAModule
-from .FullyAttentional import FullyAttentionalBlock, FullyAttentionalBlock_YOLO
+from .FullyAttentional import FullyAttentionalBlock
 from .GAM import GAM
-from .HiLo import HiLo, HiLo_YOLO
+from .HiLo import HiLo
 from .LSKA import LSKblock
 from .MLCA import MLCA
-from .NonLocal import NLBlockND, NonLocalBlock1D, NonLocalBlock2D, NonLocalBlock3D, NonLocal_YOLO
+from .NonLocal import NLBlockND, NonLocalBlock1D, NonLocalBlock2D, NonLocalBlock3D
 from .SE import SELayer
 from .SimAM import SimAM
 from .SwinTransformer import SwinTransformer

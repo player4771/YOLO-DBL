@@ -28,26 +28,26 @@ head: #DSC3k2 -> Bottleneck
 
   - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
   - [[-1, 12], 1, Concat, [1]] # cat backbone P4
-  # MODIFIED: DSC3k2, [512, True] -> Bottleneck, [512, True]
+  # DSC3k2, [512, True] -> Bottleneck, [512, True]
   - [-1, 2, Bottleneck, [512, True]] # 17
   - [[-1, 9], 1, FullPAD_Tunnel, []]  #18
 
   - [17, 1, nn.Upsample, [None, 2, "nearest"]]
   - [[-1, 13], 1, Concat, [1]] # cat backbone P3
-  # MODIFIED: DSC3k2, [256, True] -> Bottleneck, [256, True]
+  # DSC3k2, [256, True] -> Bottleneck, [256, True]
   - [-1, 2, Bottleneck, [256, True]] # 21
   - [10, 1, Conv, [256, 1, 1]]
   - [[21, 22], 1, FullPAD_Tunnel, []]  #23
 
   - [-1, 1, Conv, [256, 3, 2]]
   - [[-1, 18], 1, Concat, [1]] # cat head P4
-  # MODIFIED: DSC3k2, [512, True] -> Bottleneck, [512, True]
+  # DSC3k2, [512, True] -> Bottleneck, [512, True]
   - [-1, 2, Bottleneck, [512, True]] # 26
   - [[-1, 9], 1, FullPAD_Tunnel, []]
 
   - [26, 1, Conv, [512, 3, 2]]
   - [[-1, 14], 1, Concat, [1]] # cat head P5
-  # MODIFIED: DSC3k2, [1024, True] -> Bottleneck, [1024, True]
+  # DSC3k2, [1024, True] -> Bottleneck, [1024, True]
   - [-1, 2, Bottleneck, [1024,True]] # 30 (P5/32-large)
   - [[-1, 11], 1, FullPAD_Tunnel, []]
 

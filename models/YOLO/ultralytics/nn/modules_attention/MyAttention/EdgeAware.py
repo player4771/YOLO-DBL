@@ -6,7 +6,7 @@ class EdgeAwareAttention(nn.Module):
     """
     可以正常使用，对精度没有明显负面影响。
     """
-    def __init__(self, in_channels, out_channels=None, reduction=16, ksize=7):
+    def __init__(self, in_channels, reduction=16, ksize=7):
         super().__init__()
         self.channels = in_channels
         # 空间注意力：输入4通道 (avgX, maxX, avgG, maxG)
@@ -76,7 +76,6 @@ class EdgeAwareAttentionV2(nn.Module):
     def __init__(
         self,
         in_channels: int,
-        out_channels=None,
         reduction: int = 16,
         ksize: int = 7,
         kernel_bank=("sobel", "scharr", "prewitt"),  # 多算子银行

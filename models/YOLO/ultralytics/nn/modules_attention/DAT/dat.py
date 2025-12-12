@@ -948,7 +948,7 @@ class DAT_YOLO(nn.Module):
         split_size (tuple): 空间窗口大小
     """
 
-    def __init__(self, c1, c2=None, num_heads=4, depth=2, split_size=(8, 8)):
+    def __init__(self, c1, num_heads=4, depth=2, split_size=(8, 8)):
         super().__init__()
         # 1. 通道调整
         # ResidualGroup 内部含残差连接，通常要求输入输出通道一致。

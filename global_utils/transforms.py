@@ -8,11 +8,14 @@ __all__ = (
 )
 
 class AlbumentationsTransform:
-    def __init__(self, is_train=True, size=300):
+    def __init__(self, is_train=True, size:int|tuple[int,int]=300):
+        self.resize_w = size[0] if isinstance(size, tuple) else size
+        self.resize_h = size[1] if isinstance(size, tuple) else size
+
         if is_train:
             self.transform = A.Compose([
                 #缩放
-                A.Resize(height=size, width=size),
+                A.Resize(height=self.resize_h, width=self.resize_w),
                 #随机翻转
                 A.HorizontalFlip(p=0.5),
                 #亮度，对比度
@@ -28,7 +31,7 @@ class AlbumentationsTransform:
             ], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['class_labels']))
         else:
             self.transform = A.Compose([
-                A.Resize(height=size, width=size),
+                A.Resize(height=self.resize_h, width=self.resize_w),
                 A.Normalize(),
                 A.pytorch.ToTensorV2(),
             ], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['class_labels']))

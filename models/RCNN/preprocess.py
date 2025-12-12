@@ -6,7 +6,7 @@ from tqdm import tqdm
 from pathlib import Path
 
 from utils import selective_search
-from global_utils import YoloDataset
+from global_utils import YOLODataset
 
 
 def create_training_samples_vectorized(proposals, gt_boxes, gt_labels):
@@ -68,7 +68,7 @@ def main(data_yaml_path):
         label_dir = img_dir.parent / 'labels'
         output_dir = yaml_dir / 'preprocessed' / split
         output_dir.mkdir(parents=True, exist_ok=True)
-        dataset = YoloDataset(img_dir=img_dir, label_dir=label_dir)
+        dataset = YOLODataset(img_dir=img_dir, label_dir=label_dir)
         task_args = [(dataset[i][0], dataset[i][1], output_dir, dataset.img_files[i]) for i in range(len(dataset))]
         with multiprocessing.Pool(processes=num_processes) as pool:
             list(tqdm(pool.imap_unordered(worker, task_args), total=len(task_args), desc=f"Processing {split}"))

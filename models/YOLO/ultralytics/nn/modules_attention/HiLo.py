@@ -163,21 +163,3 @@ class HiLo(nn.Module):
 
         return hifi_flops + lofi_flops
 
-
-class HiLo_YOLO(nn.Module):
-    def __init__(self, c1, c2=None, num_heads=8, window_size=2, alpha=0.5):
-        super().__init__()
-        # HiLo 是 Self-Attention，通常输入输出通道一致
-        assert c1 == c2, "requires c1 == c2"
-        # 确保 dim 能被 num_heads 整除
-        assert c2 % num_heads == 0, "requires out_channels % num_heads == 0"
-
-        self.hilo = HiLo(
-            dim=c1,
-            num_heads=num_heads,
-            window_size=window_size,
-            alpha=alpha
-        )
-
-    def forward(self, x):
-        return self.hilo(x)

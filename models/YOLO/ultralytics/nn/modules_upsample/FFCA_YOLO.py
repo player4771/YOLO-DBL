@@ -41,7 +41,7 @@ class Conv_withoutBN(nn.Module):
         return self.act(self.conv(x))
 
 class SCAM(nn.Module):
-    def __init__(self, in_channels, out_channels=None, reduction=1):
+    def __init__(self, in_channels, reduction=1):
         super(SCAM, self).__init__()
         self.in_channels = in_channels
         self.inter_channels = in_channels

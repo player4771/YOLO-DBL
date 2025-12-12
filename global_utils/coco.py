@@ -1,4 +1,5 @@
 import torch
+import joblib
 import pandas as pd
 from tqdm import tqdm
 from pathlib import Path
@@ -6,132 +7,153 @@ from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
 
 __all__ = (
+    'coco_stat_names',
     'convert_to_coco_api',
-    'coco_evaluate',
-    'write_coco_stat',
+    'COCOEvaluator',
 )
 
-def convert_to_coco_api(ds):
+
+coco_stat_names = (
+        'mAP', 'AP50', 'AP75',
+        'APs', 'APm', 'APl',
+        'AR1', 'AR10', 'AR100',
+        'ARs', 'ARm', 'ARl'
+)
+
+def convert_to_coco_api(dataset):
     """将数据集转换为COCO API格式以进行评估"""
-    coco_ds = COCO()
+    categories, annotations, images = set(), [], []
     ann_id = 1
-    dataset = {'images': [], 'categories': [], 'annotations': [], 'info':{}}
-    categories = set()
-    for img_idx in range(len(ds)):
-        _, targets = ds[img_idx]
+    for img_idx in range(len(dataset)):
+        targets = dataset.get_targets(img_idx)
         image_id = targets["image_id"].item()
         img_dict = {
             'id': image_id,
             'height': targets['orig_size'][0].item(),
             'width': targets['orig_size'][1].item()
         }
-        dataset['images'].append(img_dict)
+        images.append(img_dict)
 
-        boxes, labels = targets["boxes"], targets["labels"]
-        # Convert from xyxy to xywh
-        boxes[:, 2:] -= boxes[:, :2]
+        #向量化计算宽和高 (xyxy -> xywh)
+        boxes = targets["boxes"] #xyxy
+        w = boxes[:, 2] - boxes[:, 0] #这里不可直接box[...]-box[...]，因为会修改原数据
+        h = boxes[:, 3] - boxes[:, 1]
+        areas = w * h
+        boxes = torch.stack([boxes[:, 0], boxes[:, 1], w, h], dim=1) #xywh
 
-        for i in range(boxes.shape[0]):
-            ann = {
+        boxes = boxes.tolist()
+        areas = areas.tolist()
+        labels = targets["labels"].tolist()
+
+        for box,label,area in zip(boxes,labels,areas):
+            annotation = {
                 'image_id': image_id,
-                'bbox': boxes[i].tolist(),
-                'category_id': labels[i].item(),
+                'bbox': box,
+                'category_id': label,
                 'id': ann_id,
+                'area': area,
                 'iscrowd': 0
             }
-            categories.add(labels[i].item())
-            ann['area'] = ann['bbox'][2] * ann['bbox'][3]
-            dataset['annotations'].append(ann)
+            annotations.append(annotation)
+            categories.add(label)
             ann_id += 1
-    dataset['categories'] = [{'id': i} for i in sorted(categories)]
+
+    dataset = {
+        'images': images,
+        'categories': [{'id': i} for i in sorted(categories)],
+        'annotations': annotations,
+        'info': {}
+    }
+
+    coco_ds = COCO()
     coco_ds.dataset = dataset
     coco_ds.createIndex()
     return coco_ds
 
-@torch.inference_mode()
-def coco_evaluate(model, data_loader, device='cpu',
-                  coco_gt=None, outfile:str|Path=None, min_score:float=None):
-    model.eval()
-    if coco_gt is None:
-        print('Warning: suggest to provide coco_gt as argument')
-        coco_gt = convert_to_coco_api(data_loader.dataset)
+class COCOEvaluator:
+    def __init__(self, outdir:str|Path=None, coco_gt=None):
+        self.outdir = Path(outdir)
+        if not self.outdir.exists():
+            self.outdir.mkdir(parents=True, exist_ok=True)
+        self.coco_gt = coco_gt
+        self.coco_eval = None
+        self.coco_stats = pd.DataFrame([], columns=coco_stat_names)
+        self.best_score = 0 #mAP50-95
 
-    boxes, labels, scores, image_ids = [], [], [], []
+    @torch.inference_mode()
+    def evaluate(self, model, data_loader, min_score:float=None):
+        device = next(model.parameters()).device
+        is_training = model.training
+        model.eval()
+        if self.coco_gt is None:
+            print('Warning: suggest to provide coco_gt as argument')
+            self.coco_gt = convert_to_coco_api(data_loader.dataset)
 
-    for images, targets in tqdm(data_loader, desc="Eval"):
-        images = [img.to(device) for img in images]
+        boxes, labels, scores, image_ids = [], [], [], []
+        for images, targets in tqdm(data_loader, desc="Eval"):
+            images = [img.to(device) for img in images]
+            outputs = model(images)
 
-        outputs = model(images) #on GPU
+            for target, output in zip(targets, outputs):
+                output_scores = output['scores']
+                output_boxes = output['boxes']
+                output_labels = output['labels']
 
-        for target, output in zip(targets, outputs):
-            output_scores = output['scores']
+                if min_score is not None:
+                    keep = output_scores > min_score
+                    if not keep.any():
+                        continue
+                    output_scores = output_scores[keep]
+                    output_boxes = output_boxes[keep]
+                    output_labels = output_labels[keep]
 
-            if min_score:
-                # 在GPU上提前过滤，然后只将有用的数据移动到CPU
-                keep = output_scores > min_score
-                if not keep.any():
-                    continue
-                boxes.append(output['boxes'][keep].cpu())
-                labels.append(output['labels'][keep].cpu())
-                scores.append(output_scores[keep].cpu())
-                image_id = target['image_id'].item()
-                image_ids.extend([image_id] * keep.sum().item())
-            else:
-                boxes.append(output['boxes'].cpu())
-                labels.append(output['labels'].cpu())
+                boxes.append(output_boxes.cpu())
+                labels.append(output_labels.cpu())
                 scores.append(output_scores.cpu())
-                image_id = target['image_id'].item()
-                num_preds = len(output['scores'])
-                image_ids.extend([image_id] * num_preds)
 
-    if not image_ids:
-        print("No valid predictions after filtering, skipping evaluation.")
-        return None
-
-    boxes = torch.cat(boxes, dim=0)
-    # 向量化坐标转换 (xyxy -> xywh)
-    boxes[:, 2:] -= boxes[:, :2]
-    boxes = boxes.tolist()
-    scores = torch.cat(scores, dim=0).tolist()
-    labels = torch.cat(labels, dim=0).tolist()
-
-    coco_results = [{
-        "image_id": image_id,
-        "category_id": label,
-        "bbox": box,
-        "score": score,
-    } for image_id, label, box, score in zip(image_ids, labels, boxes, scores)]
-
-    # --- 后续评估代码不变 ---
-    coco_dt = coco_gt.loadRes(coco_results)
-    coco_eval = COCOeval(coco_gt, coco_dt, "bbox")
-    coco_eval.evaluate()
-    coco_eval.accumulate()
-    coco_eval.summarize()
-
-    if outfile:
-        write_coco_stat(coco_eval.stats, outfile)
-
-    return coco_eval
+                #list*int -> torch.full, 如果这里报错了检查一下target['image_id']是不是tensor
+                #创建一个填充了image_id的tensor，长度等于预测框数
+                image_ids.append(torch.full((len(output_scores),), target['image_id'], dtype=torch.int64))
 
 
-def write_coco_stat(stats:list, outfile: str | Path) -> None:
-    metric_names = [
-        'mAP', 'AP50', 'AP75',
-        'APs', 'APm', 'APl',
-        'AR1', 'AR10', 'AR100',
-        'ARs', 'ARm', 'ARl'
-    ]
+        if is_training:
+            model.train()
 
-    if not Path(outfile).exists():
-        Path(outfile).parent.mkdir(parents=True, exist_ok=True)
-        # Dataframe默认接受一个二维列表，第一维为列，内部每个列表为行
-        df = pd.DataFrame([stats], columns=metric_names)
-    else:
-        df = pd.read_csv(outfile)
-        if df.empty:
-            df = pd.DataFrame([stats], columns=metric_names)
-        else:
-            df = pd.concat([df, pd.DataFrame([stats], columns=metric_names)], ignore_index=True)
+        if not image_ids:
+            print("No valid predictions after filtering, skipping evaluation.")
+            return None
 
-    df.to_csv(outfile, index=False)
+        image_ids = torch.cat(image_ids).tolist()
+        boxes = torch.cat(boxes)
+        # 向量化坐标转换 (xyxy -> xywh)
+        boxes[:, 2:] -= boxes[:, :2]
+        boxes = boxes.tolist()
+        scores = torch.cat(scores, dim=0).tolist()
+        labels = torch.cat(labels, dim=0).tolist()
+
+        coco_results = [{
+            "image_id": image_id,
+            "category_id": label,
+            "bbox": box,
+            "score": score,
+        } for image_id, label, box, score in zip(image_ids, labels, boxes, scores)]
+
+        coco_dt = self.coco_gt.loadRes(coco_results)
+        self.coco_eval = COCOeval(self.coco_gt, coco_dt, "bbox")
+        self.coco_eval.evaluate()
+        self.coco_eval.accumulate()
+        self.coco_eval.summarize()
+
+        if self.outdir: #-> save results (if outdir exists)
+            #update stats here
+            self.coco_stats = pd.concat([self.coco_stats, self.coco_eval.stats], ignore_index=True)
+            self.coco_stats.to_csv(self.outdir/'coco_stats.csv', index=False) #update stats file
+            if self.coco_eval.stats[0]>self.best_score:
+                cocoeval_best = {
+                    'stats': self.coco_eval.stats,
+                    'eval': self.coco_eval.eval,
+                    'params': self.coco_eval.params
+                }
+                joblib.dump(cocoeval_best, self.outdir/'cocoeval_best.bin')
+
+        return self.coco_eval

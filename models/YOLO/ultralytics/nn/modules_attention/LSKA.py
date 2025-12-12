@@ -26,7 +26,7 @@ class Mlp(nn.Module):
 
 
 class LSKblock(nn.Module):
-    def __init__(self, dim, c2=None):
+    def __init__(self, dim):
         super().__init__()
         self.conv0 = nn.Conv2d(dim, dim, 5, padding=2, groups=dim)
         self.conv_spatial = nn.Conv2d(dim, dim, 7, stride=1, padding=9, groups=dim, dilation=3)

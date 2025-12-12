@@ -6,9 +6,9 @@ from tqdm import tqdm
 from pathlib import Path
 from datetime import datetime
 
-from .dataset import YoloDataset
+from .dataset import YOLODataset
 from .tools import find_new_dir, WindowsRouser
-from .coco import convert_to_coco_api, coco_evaluate
+from .coco import convert_to_coco_api, COCOEvaluator
 
 __all__ = (
     'EarlyStopping',
@@ -125,11 +125,11 @@ class Trainer:
         self.results_file = output_dir / 'results.csv'
 
         # 创建 Dataset
-        dataset_train = YoloDataset(
+        dataset_train = YOLODataset(
             img_dir=self.train_img_dir, label_dir=self.train_label_dir,
             transform=transform_train
         )
-        dataset_val = YoloDataset(
+        dataset_val = YOLODataset(
             img_dir=self.val_img_dir, label_dir=self.val_label_dir,
             transform=transform_val
         )
@@ -156,6 +156,7 @@ class Trainer:
         self.early_stopper = EarlyStopping(patience=patience, outfile=output_dir/'best.pth', mode='max')
         warmup_iters = warmup * len(self.train_loader)
         self.warmup_scheduler = torch.optim.lr_scheduler.LinearLR(self.optimizer, start_factor=1e-3, total_iters=warmup_iters)
+        self.evaluator = COCOEvaluator(outdir=output_dir, coco_gt=convert_to_coco_api(self.val_loader.dataset))
 
         self.cfg = cfg
         with open(output_dir / 'args.yaml', 'w') as f:
@@ -166,7 +167,6 @@ class Trainer:
             print('警告：不建议在训练时更改参数，请在初始化时提供。')
         self.cfg.update(kwargs)
         self.cfg['start_time'] = datetime.now().strftime("%Y/%m/%d %H:%M:%S")
-        coco_gt = convert_to_coco_api(self.val_loader.dataset)
 
         rouser = WindowsRouser()
         if self.cfg['no_sleep']:
@@ -197,7 +197,7 @@ class Trainer:
             if epoch >= self.cfg['warmup_epochs']:
                 self.scheduler.step()
 
-            coco_eval = coco_evaluate(self.model, self.val_loader, self.device, coco_gt=coco_gt, outfile=self.results_file)
+            coco_eval = self.evaluator.evaluate(self.model, self.val_loader)
             mAP = coco_eval.stats[0] if coco_eval else 0.0
 
             self.early_stopper.update(mAP, self.model)

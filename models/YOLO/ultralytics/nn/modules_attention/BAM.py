@@ -56,7 +56,7 @@ class BAM_YOLO(nn.Module):
         c2 (int): 输出通道 (BAM通常保持通道不变，故c2应等于c1)
         reduction (int): 缩减比率
     """
-    def __init__(self, c1, c2=None, reduction=16):
+    def __init__(self, c1, reduction=16):
         super().__init__()
         self.channel_att = ChannelGate(c1, reduction_ratio=reduction)
         self.spatial_att = SpatialGate(c1, reduction_ratio=reduction)

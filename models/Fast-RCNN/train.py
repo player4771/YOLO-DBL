@@ -6,7 +6,7 @@ torch.hub.set_dir('./') #修改缓存路径
 
 from model import FastRCNNFPN as FastRCNN
 from utils import evaluate, FastRCNNCollator, compute_loss
-from global_utils import find_new_dir, EarlyStopping, get_dataloader, YoloDataset, AlbumentationsTransform, time_now_str
+from global_utils import find_new_dir, EarlyStopping, get_dataloader, YOLODataset, AlbumentationsTransform, time_now_str
 
 
 def train(**kwargs):
@@ -43,8 +43,8 @@ def train(**kwargs):
     with open(output_dir/'args.yaml', 'w') as outfile:
         yaml.dump(cfg, outfile)
 
-    train_loader = get_dataloader(cfg, YoloDataset, AlbumentationsTransform, True, FastRCNNCollator(cfg))
-    val_loader = get_dataloader(cfg, YoloDataset, AlbumentationsTransform, False, FastRCNNCollator(cfg))
+    train_loader = get_dataloader(cfg, YOLODataset, AlbumentationsTransform, True, FastRCNNCollator(cfg))
+    val_loader = get_dataloader(cfg, YOLODataset, AlbumentationsTransform, False, FastRCNNCollator(cfg))
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=cfg['lr'], weight_decay=cfg['weight_decay'])
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=cfg['epochs'])

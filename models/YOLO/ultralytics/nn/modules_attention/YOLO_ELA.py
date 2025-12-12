@@ -30,16 +30,16 @@ class ECAAttention(nn.Module):
 class ELA(nn.Module):
     """Constructs an Efficient Local Attention module.
     Args:
-        in_channels: Number of channels of the input feature map
+        channel: Number of channels of the input feature map
         kernel_size: Adaptive selection of kernel size
     """
 
-    def __init__(self, in_channels, out_channels=None, kernel_size=7):
+    def __init__(self, channel, kernel_size=7):
         super(ELA, self).__init__()
 
-        self.conv = nn.Conv1d(in_channels, in_channels, kernel_size=kernel_size, padding=kernel_size // 2,
-                              groups=in_channels, bias=False)
-        self.gn = nn.GroupNorm(16, in_channels)
+        self.conv = nn.Conv1d(channel, channel, kernel_size=kernel_size, padding=kernel_size // 2,
+                              groups=channel, bias=False)
+        self.gn = nn.GroupNorm(16, channel)
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):

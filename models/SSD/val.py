@@ -3,7 +3,7 @@ import torch
 from pathlib import Path
 
 from train import create_model
-from global_utils import coco_evaluate, YoloDataset, AlbumentationsTransform
+from global_utils import coco_evaluate, YOLODataset, AlbumentationsTransform
 
 def collate_fn(batch):
     """
@@ -30,7 +30,7 @@ def val(args_file:str|Path=None, **kwargs):
     img_dir = data_root / data_yaml['val']
     label_dir = img_dir.parent / 'labels'
 
-    dataset = YoloDataset(
+    dataset = YOLODataset(
         img_dir=img_dir, label_dir=label_dir,
         transform=AlbumentationsTransform(is_train=False, size=300)
     )

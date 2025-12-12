@@ -101,7 +101,7 @@ class SparseLinearAttention(nn.Module):
 
 class SLA(SparseLinearAttention):
     """SparseLinearAttention的包装类，区别在于forward函数接受正常的NCHW向量"""
-    def __init__(self, in_channels, out_channels=None, num_heads=4, head_dim=None, **kwargs):
+    def __init__(self, in_channels, num_heads=4, head_dim=None, **kwargs):
         if head_dim is None:
             assert in_channels % num_heads == 0, f"in_channels({in_channels}) % num_heads({num_heads}) != 0"
             head_dim = in_channels // num_heads

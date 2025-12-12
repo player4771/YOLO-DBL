@@ -69,7 +69,8 @@ from ultralytics.nn.modules import (
     HyperACE,
     DownsampleConv,
     FullPAD_Tunnel,
-    DSC3k2
+    DSC3k2,
+    CBAM,
 )
 from ultralytics.utils import DEFAULT_CFG_DICT, DEFAULT_CFG_KEYS, LOGGER, colorstr, emojis, yaml_load
 from ultralytics.utils.checks import check_requirements, check_suffix, check_yaml
@@ -1009,6 +1010,7 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             DSConv,
 
             FEM,
+            EUCB,
             C2f_PIG,
             C3k2_EFE,
             SPDConv,
@@ -1017,30 +1019,14 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             C2f_ScConv,
             M2C2f,
             C3k2_EAMC,
-            EMA,
-            SELayer,
-            EdgeAwareAttention,
-            EdgeAwareAttentionV2,
-            AxialBlock_YOLO,
-            BAM_YOLO,
             CPCA_YOLO,
             DeBiAttention_YOLO,
             EfficientAttention_YOLO,
-            FullyAttentionalBlock_YOLO,
-            HiLo_YOLO,
-            NonLocal_YOLO,
             SwinTransformer,
             Outlooker_YOLO,
-            BiFormerNCHW,
-            DAT_YOLO,
-            SLA,
             PSAModule,
-            LSKblock,
-            SCAM,
             CoordAttention,
             GAM,
-            ELA,
-            CAA,
         }:
             c1, c2 = ch[f], args[0]
             if c2 != nc:  # if c2 not equal to number of classes (i.e. for Classify() output)
@@ -1051,7 +1037,7 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
                     max(round(min(args[2], max_channels // 2 // 32)) * width, 1) if args[2] > 1 else args[2]
                 )  # num heads
 
-            args = [c1, c2, *args[1:]] #需要模型init的前两个参数分别为c1和c2
+            args = [c1, c2, *args[1:]] #需要模型init的前两个参数分别为c1和c2, yaml中args=[c2, ...]
             if m in {
                 BottleneckCSP,
                 C1,
@@ -1142,18 +1128,35 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
         elif m in [Multibranch]:
             c2 = ch[f]
             args = [c2]
+
         elif m is FFM_Concat2:
             c2 = sum(ch[x] for x in f)
             args = [args[0], c2 // 2, c2 // 2]
         elif m is FFM_Concat3:
             c2 = sum(ch[x] for x in f)
             args = [args[0], c2 // 4, c2 // 2, c2 // 4]
-        elif m in [EUCB]:
-            c2 = ch[f]
-            args = [c2, *args]
-        elif m in [DySample]:
-            c1, c2 = ch[f], ch[f]
-            args = [c1, *args]
+        elif m in ( #参数形如c1, **kwargs，只需c1不虚c2的模块
+            DySample,
+            CBAM,
+            SLA,
+            EMA,
+            SELayer,
+            EdgeAwareAttention,
+            EdgeAwareAttentionV2,
+            AxialBlock_YOLO,
+            BAM_YOLO,
+            FullyAttentionalBlock,
+            HiLo,
+            NonLocalBlock2D,
+            BiFormerNCHW,
+            DAT_YOLO,
+            LSKblock,
+            SCAM,
+            ELA,
+            CAA,
+        ):
+            c1, c2 = ch[f], ch[f] #实际上yaml中的c1并没有被使用
+            args = [c1, *args[1:]] #用c1替换args[0]是因为有缩放，二者未必相等
         else:
             c2 = ch[f]
 
