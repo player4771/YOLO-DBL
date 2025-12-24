@@ -7,7 +7,7 @@ from pathlib import Path
 from datetime import datetime
 
 from .dataset import YOLODataset
-from .tools import find_new_dir, WindowsRouser
+from .tools import find_new_dir, WindowsRouser, time_now_str
 from .coco import convert_to_coco_api, COCOEvaluator
 
 __all__ = (
@@ -69,25 +69,26 @@ class EarlyStopping:
 
 
 class Trainer:
-    def __init__(self,
-                 model,
-                 data,
-                 project='./runs',
-                 name='train',
-                 amp=True,
-                 epochs=20,
-                 lr=0.001,
-                 batch_size=8,
-                 num_workers=4,
-                 patience=7,
-                 warmup=0,
-                 weight_decay=1e-5,
-                 collate_fn=None,
-                 transform_train=None,
-                 transform_val=None,
-                 no_sleep=True,
-                 **kwargs
-                 ):
+    def __init__(
+            self,
+            model,
+            data,
+            project='./runs',
+            name='train',
+            amp=True,
+            epochs=20,
+            lr=0.001,
+            batch_size=8,
+            num_workers=4,
+            patience=7,
+            warmup=0,
+            weight_decay=1e-5,
+            collate_fn=None,
+            transform_train=None,
+            transform_val=None,
+            no_sleep=True,
+            **kwargs
+    ):
         self.model = model
         cfg = {
             'data':data,
@@ -164,9 +165,9 @@ class Trainer:
 
     def start_training(self, **kwargs):
         if len(kwargs) > 0:
-            print('警告：不建议在训练时更改参数，请在初始化时提供。')
+            print("警告：不建议在训练时更改参数，请在Trainer初始化时提供。")
         self.cfg.update(kwargs)
-        self.cfg['start_time'] = datetime.now().strftime("%Y/%m/%d %H:%M:%S")
+        self.cfg['start_time'] = time_now_str()
 
         rouser = WindowsRouser()
         if self.cfg['no_sleep']:
@@ -177,6 +178,7 @@ class Trainer:
             #TODO: 添加更多自定义部分，以适配更多模型
             pbar = tqdm(self.train_loader, desc=f"Train[{epoch}]")
             for (images, targets) in pbar:
+                #idea: 自定义images/targets的转换函数？
                 images = torch.stack(images, dim=0).to(device=self.device, non_blocking=True)
                 targets = [{k: v.to(self.device, non_blocking=True) for k, v in t.items()} for t in targets]
 

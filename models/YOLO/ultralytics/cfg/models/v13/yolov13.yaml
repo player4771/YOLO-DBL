@@ -6,7 +6,7 @@ scales: # model compound scaling constants, i.e. 'model=yolov13n.yaml' will call
   l: [1.00, 1.00, 512]    # Large
   x: [1.00, 1.50, 512]    # Extra Large
 
-backbone:
+backbone: #假设输入尺寸为640x640
   # [from, repeats, module, args]
   - [-1, 1, Conv, [64, 3, 2]] # 0(P1/2, 特征金字塔1层/2倍下采样(stride=2), 特征图尺寸640/2=320)
   - [-1, 1, Conv, [128, 3, 2, 1, 2]] # 1(P2/4, 金字塔2层/4倍下采样, 特征图尺寸320/2=640/4=160)
@@ -19,7 +19,7 @@ backbone:
   - [-1, 4, A2C2f, [1024, True, 1]] # 8 -> 9,14
 
 head: #args中不包含c1, c1由上一层的输出自动决定
-  - [[4, 6, 8], 2, HyperACE, [512, 8, True, True, 0.5, 1, "both"]] # 9 -> 11,12,18,27
+  - [[4, 6, 8], 2, HyperACE, [512, 8, True, True, 0.5, 1, "both"]] # 9 -> 11,12,18,27, 以下通道数都以512为基准
   - [-1, 1, nn.Upsample, [None, 2, "nearest"]] # 10 -> 13,22
   - [ 9, 1, DownsampleConv, []] # 11 -> 14,31
 

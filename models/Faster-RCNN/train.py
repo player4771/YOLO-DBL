@@ -5,7 +5,7 @@ torch.hub.set_dir('./') #修改缓存路径
 torch.backends.cudnn.benchmark = True
 torch.backends.cuda.matmul.allow_tf32 = True
 
-from global_utils import Trainer, AlbumentationsTransform
+from global_utils import Trainer, ATransforms
 
 
 def create_model(backbone='resnet50', num_classes=4, **kwargs):
@@ -55,8 +55,8 @@ def train(**kwargs):
     trainer = Trainer(
         model=model,
         collate_fn=collate_fn,
-        transform_train=AlbumentationsTransform(is_train=True, size=cfg['img_size']),
-        transform_val=AlbumentationsTransform(is_train=False, size=cfg['img_size']),
+        transform_train=ATransforms(is_train=True, size=cfg['img_size']),
+        transform_val=ATransforms(is_train=False, size=cfg['img_size']),
         **cfg
     )
     trainer.start_training()

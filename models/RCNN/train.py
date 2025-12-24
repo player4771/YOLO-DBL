@@ -11,7 +11,7 @@ torch.hub.set_dir('./') #修改缓存路径
 from model import RCNN
 from utils import selective_search, PreprocessedRCNNDataset
 
-from global_utils import EarlyStopping, AlbumentationsTransform, find_new_dir, time_now_str
+from global_utils import EarlyStopping, ATransforms, find_new_dir, time_now_str
 
 def create_training_samples_vectorized(proposals, gt_boxes, gt_labels):
     if len(gt_boxes) == 0:
@@ -158,8 +158,8 @@ def train(**kwargs):
         print("Please run preprocess.py first.")
         return
 
-    train_dataset = PreprocessedRCNNDataset(train_dir, transform=AlbumentationsTransform(is_train=True, size=224))
-    val_dataset = PreprocessedRCNNDataset(val_dir, transform=AlbumentationsTransform(is_train=False, size=224))
+    train_dataset = PreprocessedRCNNDataset(train_dir, transform=ATransforms(is_train=True, size=224))
+    val_dataset = PreprocessedRCNNDataset(val_dir, transform=ATransforms(is_train=False, size=224))
 
     train_loader = DataLoader(train_dataset, batch_size=cfg['batch_size'], shuffle=True,
                               num_workers=cfg['num_workers'], pin_memory=True, collate_fn=collate_fn)

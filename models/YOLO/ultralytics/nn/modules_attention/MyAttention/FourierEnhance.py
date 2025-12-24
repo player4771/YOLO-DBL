@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import numpy as np
 
 
 class FourierEnhance(nn.Module):
@@ -14,8 +13,8 @@ class FourierEnhance(nn.Module):
 
     def forward(self, x):
         N, C, H, W = x.shape
-        pad_W = 2**np.ceil(np.log2(W)).astype(int) - W
-        pad_H = 2**np.ceil(np.log2(H)).astype(int) - H
+        pad_W = torch.pow(2, torch.ceil(torch.log2(W))).type(torch.int64) - W
+        pad_H = torch.pow(2, torch.ceil(torch.log2(H))).type(torch.int64) - H
         x = F.pad(x, (0, pad_W, 0, pad_H), mode='constant', value=0) #填充到2的次方尺寸，以使用cuFFT
 
         x_f = torch.fft.fft2(x)

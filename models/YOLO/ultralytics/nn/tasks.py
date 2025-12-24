@@ -948,6 +948,7 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
     max_channels = float("inf")
     nc, act, scales = (d.get(x) for x in ("nc", "activation", "scales"))
     depth, width, kpt_shape = (d.get(x, 1.0) for x in ("depth_multiple", "width_multiple", "kpt_shape"))
+    scale='?' #v3等配置没有scale, scale会是未定义，然后因为("" in "lx")==True出bug
     if scales:
         scale = d.get("scale")
         if not scale:
@@ -1114,7 +1115,9 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
                 he = int(args[1] * 1.5)
             args = [c1, c2, n, he, *args[2:]]
             n = 1
-            if scale in "lx":  # for L/X sizes
+            if scale in "lx" and len(args) == 9:  # for L/X sizes
+                #len=9是避免参数没有给全时添加的False位置错误
+                #从而确保在参数只缺少channel_adjust时自动添加
                 args.append(False)
         elif m is DownsampleConv:
             c1 = ch[f]

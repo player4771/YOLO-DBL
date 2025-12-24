@@ -7,7 +7,7 @@ torch.backends.cudnn.benchmark=True
 from torchvision.models.detection.anchor_utils import DefaultBoxGenerator
 
 from backbone import ResNetBackbone
-from global_utils import AlbumentationsTransform, Trainer
+from global_utils import ATransforms, Trainer
 
 def create_model(backbone:str='vgg16', num_classes:int=4): # -> model
     if backbone == "vgg16":
@@ -83,8 +83,8 @@ def train(**kwargs):
     trainer = Trainer(
         model=model,
         collate_fn=collate_fn,
-        transform_train=AlbumentationsTransform(is_train=True, size=300),
-        transform_val=AlbumentationsTransform(is_train=False, size=300),
+        transform_train=ATransforms(is_train=True, size=300),
+        transform_val=ATransforms(is_train=False, size=300),
         **cfg
     )
     trainer.start_training()

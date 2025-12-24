@@ -78,6 +78,4 @@ def attention_test(in_channels:int=64, size:int=256):
             check_time(module.to('cuda'), input)
 
 if __name__ == '__main__':
-    img_file = r"E:\Projects\Datasets\tea_leaf_diseases_v4\train\images\IMG_20230612_151845_jpg.rf.f66a145758c7c6dd4c6ac816c813601a.jpg"
-    #label_image_tea(img_file)
     attention_test()

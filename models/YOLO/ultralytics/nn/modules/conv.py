@@ -44,12 +44,18 @@ class Conv(nn.Module):
     def __init__(self, c1, c2, k=1, s=1, p=None, g=1, d=1, act=True):
         """Initialize Conv layer with given arguments including activation."""
         super().__init__()
+        #卷积：负责提取特征
+        #s决定了缩放，若s=1，则尺寸不变；若s=2，则尺寸减半，以此类推
         self.conv = nn.Conv2d(c1, c2, k, s, autopad(k, p, d), groups=g, dilation=d, bias=False)
+        #Batch Normalization: 归一化，加速收敛并防止过拟合
         self.bn = nn.BatchNorm2d(c2)
+        #激活函数：引入非线性
+        #使用激活函数的判定：act==True则使用SiLU，否则如果act传入的是一个模块则使用这个模块，还不是则使用nn.Identity(什么都不干)
         self.act = self.default_act if act is True else act if isinstance(act, nn.Module) else nn.Identity()
 
     def forward(self, x):
         """Apply convolution, batch normalization and activation to input tensor."""
+        #Input: H*W*C1; Output: H'*W'*C2
         return self.act(self.bn(self.conv(x)))
 
     def forward_fuse(self, x):

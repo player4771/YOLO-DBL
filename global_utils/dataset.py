@@ -1,11 +1,11 @@
-import cv2
 import torch
 from PIL import Image
 from pathlib import Path
 import matplotlib.pyplot as plt
+import matplotlib.patches as patches
 from torchvision.tv_tensors import BoundingBoxes
 
-from .tools import rand_rgb
+from global_utils.tools import rand_rgb
 
 __all__ = (
     'YOLODataset',
@@ -34,9 +34,8 @@ class YOLODataset(torch.utils.data.Dataset):
         img_path = self.img_files[idx]
         label_path = self.label_files[img_path.stem]
 
-        image = cv2.imread(str(img_path))
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        h_raw, w_raw, _ = image.shape  # height, width, channels
+        image = Image.open(str(img_path)).convert('RGB')
+        w_raw, h_raw = image.size
 
         # 读取 YOLO 标注
         boxes = []
@@ -137,13 +136,19 @@ class YOLODataset(torch.utils.data.Dataset):
             'iscrowd': iscrowd,
         }
 
-def label_image(img_file:str|Path, label_file:str|Path=None, class_names:tuple|list=None, colors:tuple|list=None):
+def label_image(image_file:str|Path, label_file:str|Path=None, class_names: tuple|list=None, colors: tuple|list=None):
     if label_file is None:
         #YOLO格式, image dir -> label dir -> label file
-        label_file = Path(img_file, "../../labels") / (Path(img_file).stem+'.txt')
+        label_file = Path(image_file, "../../labels") / (Path(image_file).stem + '.txt')
 
-    image = cv2.imread(img_file)
-    h, w, c = image.shape
+    image = plt.imread(str(image_file))
+    h, w = image.shape[:2]
+
+    dpi = 100
+    fig, ax = plt.subplots(figsize=(w/dpi, h/dpi), dpi=dpi)
+    ax.set_position((0, 0, 1, 1))  # 让Axes充满整个Figure
+    ax.axis('off')
+    ax.imshow(image)
 
     with open(label_file, 'r') as f:
         labels = f.readlines()
@@ -152,60 +157,45 @@ def label_image(img_file:str|Path, label_file:str|Path=None, class_names:tuple|l
         parts = tuple(map(float, label.strip().split())) #tuple[float*5]
         class_id = int(parts[0])
 
-        # 坐标反归一化 (转为绝对像素)
-        x_center = int(parts[1] * w)
-        y_center = int(parts[2] * h)
-        width = int(parts[3] * w)
-        height = int(parts[4] * h)
-
-        # 左上角(x_min, y_min), 右下角(x_max, y_max)
-        x_min = int(x_center - (width / 2))
-        y_min = int(y_center - (height / 2))
-        x_max = x_min + width
-        y_max = y_min + height
+        #坐标转换 (YOLO Center -> Top-Left)
+        box_w = parts[3] * w
+        box_h = parts[4] * h
+        x_center = parts[1] * w
+        y_center = parts[2] * h
+        x_min = x_center - (box_w / 2)
+        y_min = y_center - (box_h / 2)
 
         text = class_names[class_id] if class_names is not None else f"class {class_id}"
         color = colors[class_id] if colors is not None else rand_rgb() #如果不存在则随机一个
-        font = cv2.FONT_HERSHEY_DUPLEX
-        font_scale = 0.5
-        thickness = 1
+        if max(color) > 1.0:
+            color = tuple([c/255.0 for c in color])
 
-        cv2.rectangle(image, (x_min, y_min), (x_max, y_max), color, 2) #类别框
-        (text_w, text_h), baseline = cv2.getTextSize(text, font, font_scale, thickness) #获得文本大小
+        rect = patches.Rectangle((x_min, y_min), box_w, box_h, linewidth=2, edgecolor=color, facecolor='none') #类别框
+        ax.add_patch(rect)
 
-        if y_min - text_h - baseline < 0: #上方空间不足
-            text_y = y_min + text_h + (baseline // 2)
-            text_y = min(text_y, y_max - (baseline // 2))
-            text_bg_y_min = y_min
-            text_bg_y_max = y_min + text_h + baseline
-            text_bg_y_max = min(text_bg_y_max, y_max)
-        else:
-            text_y = y_min - (baseline // 2)
-            text_bg_y_min = y_min - text_h - baseline
-            text_bg_y_min = max(text_bg_y_min, 0)
-            text_bg_y_max = y_min
-
-        cv2.rectangle(image, (x_min, text_bg_y_min), (x_min+text_w, text_bg_y_max), color, -1) #文本背景，-1为填充
-        cv2.putText(image, text, (x_min,text_y), font, font_scale, (255, 255, 255), thickness) #文本
-
-    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-
-    dpi = plt.rcParams['figure.dpi']
-    fig,ax = plt.subplots(figsize=(w/dpi,h/dpi), dpi=dpi)
-    ax.set_position([0,0,1,1])
-    ax.axis('off')
-    ax.imshow(image)
+        pad = 2
+        ax.text(
+            x_min+pad, y_min+pad, text, color='white', fontsize=max(10, h//60),
+            verticalalignment='top' if y_min<(h*0.05) else 'bottom', #文字是在线上方还是线下方
+            bbox={'facecolor': color, 'edgecolor': 'none', 'alpha': 1.0, 'pad': pad}
+        )
 
     return fig,ax
 
-def label_image_tea(img_file:str|Path=None, label_file:str=None, show:bool=True, save_path:str=None):
-    fig, ax = label_image(img_file, label_file,
-                       ('algal leaf spot', 'brown blight', 'grey-blight'),
-                       ((255,99,71), (165,42,42), (128,128,128)) #orange, brown, grey
-                       )
+def label_image_tea(image_file:str|Path=None, label_file:str=None, show:bool=True, save_path:str=None):
+    fig, ax = label_image(
+        image_file, label_file,
+        ('algal leaf spot', 'brown blight', 'grey-blight'),
+        ((255,99,71), (165,42,42), (128,128,128)) #orange, brown, grey
+    )
     if show:
         fig.show()
     if save_path is not None:
         fig.savefig(save_path, transparent=True)
-
     return fig, ax
+
+if __name__ == '__main__':
+    label_image_tea(
+        image_file=r"E:\Projects\Datasets\example\sample_v4_1.jpg",
+        label_file=r"E:\Projects\Datasets\example\sample_v4_1.txt",
+    )

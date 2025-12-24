@@ -1792,12 +1792,17 @@ class FuseModule(nn.Module):
         super(FuseModule, self).__init__()
         self.downsample = nn.AvgPool2d(kernel_size=2)
         self.upsample = nn.Upsample(scale_factor=2, mode='nearest')
-        if channel_adjust:
+        if channel_adjust: #channel_adjust在HyperACE中默认为True
+            #这里有个写死的逻辑: c1+c2+c3必须等于4*c_in
+            #而HyperACE的源码中c_in=c1(输入通道数)，所以c1+c2+c3需要等于HyperACE的in_channels*4
+            #YOLO的配置中c1是由上一层的输出自动填充的，所以c1+c2+c3=上一层的out_channels*4
             self.conv_out = Conv(4 * c_in, c_in, 1)
         else:
             self.conv_out = Conv(3 * c_in, c_in, 1)
 
     def forward(self, x):
+        #print(x[0].shape, x[1].shape, x[2].shape)
+        #以x[1]为尺寸基础，x[0]下采样，x[2]上采样
         x1_ds = self.downsample(x[0])
         x3_up = self.upsample(x[2])
         x_cat = torch.cat([x1_ds, x[1], x3_up], dim=1)
@@ -1849,13 +1854,14 @@ class HyperACE(nn.Module):
         self.branch2 = C3AH(self.c, self.c, e2, num_hyperedges, context)
                     
     def forward(self, X):
-        x = self.fuse(X)
+        x = self.fuse(X) #3个输入在这里被融合
         y = list(self.cv1(x).chunk(3, 1))
         out1 = self.branch1(y[1])
         out2 = self.branch2(y[1])
         y.extend(m(y[-1]) for m in self.m)
         y[1] = out1
         y.append(out2)
+        #print(self.cv2(torch.cat(y, 1)).shape)
         return self.cv2(torch.cat(y, 1))
 
 class DownsampleConv(nn.Module):

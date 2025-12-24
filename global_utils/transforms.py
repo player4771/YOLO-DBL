@@ -4,10 +4,10 @@ import os
 os.environ['NO_ALBUMENTATIONS_UPDATE'] = '1'
 
 __all__ = (
-    'AlbumentationsTransform',
+    'ATransforms',
 )
 
-class AlbumentationsTransform:
+class ATransforms:
     def __init__(self, is_train=True, size:int|tuple[int,int]=300):
         self.resize_w = size[0] if isinstance(size, tuple) else size
         self.resize_h = size[1] if isinstance(size, tuple) else size
@@ -36,5 +36,29 @@ class AlbumentationsTransform:
                 A.pytorch.ToTensorV2(),
             ], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['class_labels']))
 
-    def __call__(self, image, bboxes, class_labels):
-        return self.transform(image=image, bboxes=bboxes, class_labels=class_labels)
+    def __call__(self, image, boxes, class_labels):
+        return self.transform(image=image, bboxes=boxes, class_labels=class_labels)
+
+def ATransform_visualization(image):
+    """
+    :param image: Image Data (ndarray/Tensor/...)
+    :return: Processed image
+    """
+    transforms=[
+        A.HueSaturationValue(0.015*180, 0.7*255, 0.4*255, p=1),
+        A.RandomScale(0.9, p=1),
+        A.ChannelShuffle(p=1),
+        A.CoarseDropout(p=1),
+    ]
+    results = []
+    for transform in transforms:
+        image = transform(image=image)['image']
+        results.append(image)
+    return results
+
+if __name__ == '__main__':
+    import cv2
+    sample = cv2.imread(r"E:\Projects\Datasets\example\sample_v4_1.jpg", cv2.IMREAD_COLOR_RGB)
+    results = ATransform_visualization(sample)
+    for i, img in enumerate(results):
+        cv2.imwrite(f"./cache/transform{i+1}.png", img)

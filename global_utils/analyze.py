@@ -13,7 +13,7 @@ __all__ = (
     'plt_coco_stats',
 )
 
-def parse_coco_stats(results: str | Path | pd.DataFrame | np.ndarray) -> np.ndarray:
+def parse_coco_stats(results: str|Path|pd.DataFrame|np.ndarray) -> np.ndarray:
     """
     输入列格式需与COCOeval.stats输出一致(详见coco.py) \n
     (不进行内容检查)

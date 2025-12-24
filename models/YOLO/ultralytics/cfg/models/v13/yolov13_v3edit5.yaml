@@ -54,3 +54,5 @@ head: #DSC3k2 -> Bottleneck
 
   # Detect(P3, P4, P5)
   - [[26, 30, 34], 1, Detect, [nc]] # 35
+
+# 335 layers, 17,929,360 parameters, 17,929,344 gradients, 50.3 GFLOPs
