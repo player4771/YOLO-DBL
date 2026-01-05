@@ -78,8 +78,8 @@ class NLBlockND(nn.Module):
             self.theta = conv_nd(in_channels=self.in_channels, out_channels=self.inter_channels, kernel_size=1)
             self.phi = conv_nd(in_channels=self.in_channels, out_channels=self.inter_channels, kernel_size=1)
             # 如果梯度不稳定，可以尝试启用下面两行
-            #nn.init.kaiming_normal_(self.theta.weight, mode='fan_out', nonlinearity='relu')
-            #nn.init.kaiming_normal_(self.phi.weight, mode='fan_out', nonlinearity='relu')
+            nn.init.kaiming_normal_(self.theta.weight, mode='fan_out', nonlinearity='relu')
+            nn.init.kaiming_normal_(self.phi.weight, mode='fan_out', nonlinearity='relu')
         
         if self.mode == "concatenate":
             self.W_f = nn.Sequential(
@@ -155,16 +155,19 @@ class NLBlockND(nn.Module):
 
 
 class NonLocalBlock1D(NLBlockND):
+    """Input: Batch*Channels*Length"""
     def __init__(self, in_channels, inter_channels=None, mode='embedded', sub_sample=True, bn_layer=True):
         super(NonLocalBlock1D, self).__init__(in_channels, inter_channels=inter_channels, mode=mode,
                                               dimension=1, sub_sample=sub_sample, bn_layer=bn_layer)
 
 class NonLocalBlock2D(NLBlockND):
+    """Input: Batch*Channels*Height*Width"""
     def __init__(self, in_channels, inter_channels=None, mode='embedded', sub_sample=True, bn_layer=True):
         super(NonLocalBlock2D, self).__init__(in_channels, inter_channels=inter_channels, mode=mode,
                                               dimension=2, sub_sample=sub_sample, bn_layer=bn_layer)
 
 class NonLocalBlock3D(NLBlockND):
+    """Input: Batch*Channels1*Channels2*Height*Width"""
     def __init__(self, in_channels, inter_channels=None, mode='embedded', sub_sample=True, bn_layer=True):
         super(NonLocalBlock3D, self).__init__(in_channels, inter_channels=inter_channels, mode=mode,
                                               dimension=3, sub_sample=sub_sample, bn_layer=bn_layer)

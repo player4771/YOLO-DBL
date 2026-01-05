@@ -35,13 +35,13 @@ def train(**kwargs):
         'epochs': 20,
         'lr': 1e-3,
         'lf': 1e-2,
-        'batch_size': 8,
+        'batch': 8,
         'num_workers': 8,
         'weight_decay': 1e-5,
         'patience': 5,
         'delta': 1e-3,
         'device': 'cuda' if torch.cuda.is_available() else 'cpu',
-        'warmup_epochs': 0,  # 预热epoch数，None为禁用
+        'warmup': 0,  # 预热epoch数
         'img_size': 640,
     }
     cfg.update(kwargs)
@@ -64,14 +64,14 @@ def train(**kwargs):
 
 if __name__ == '__main__':
     train(
-        backbone='resnet50v2',
+        backbone='resnet50',
         data="E:/Projects/Datasets/tea_leaf_diseases/data_abs.yaml",
         project="./runs",
         epochs=100,
         patience=7,
         lr=1e-3,
-        warmup_epochs=1,
-        batch_size=8,
+        warmup_epochs=3,
+        batch=8,
         num_workers=4,
         img_size=300,
     )

@@ -1,0 +1,50 @@
+# Ultralytics 🚀 AGPL-3.0 License - https://ultralytics.com/license
+
+# Ultralytics YOLOv3 object detection model with P3/8 - P5/32 outputs
+# Model docs: https://docs.ultralytics.com/models/yolov3
+# Task docs: https://docs.ultralytics.com/tasks/detect
+
+# Parameters
+nc: 80 # number of classes
+depth_multiple: 1.0 # model depth multiple
+width_multiple: 1.0 # layer channel multiple
+
+
+backbone:
+  # [from, number, module, args]
+  - [-1, 1, Conv, [64, 3, 2]] # 0-P1/2
+  - [-1, 2, DSC3k2, [64, False, 0.25]]
+  - [-1, 1, Conv, [128, 3, 2]] # P2/4
+  - [-1, 2, DSC3k2, [128, False, 0.25]]
+  - [-1, 1, Conv, [256, 3, 2]] # P3/8
+  - [-1, 2, DSC3k2, [256, False, 0.25]]
+  - [-1, 1, Conv, [512, 1, 1]] # 这是一个独立的适配层，输出只通向HyperACE
+  - [-2, 1, DSConv, [512, 3, 2]] # P4/16, 这层的输入是上上层，跳过了上一层的输出
+  - [-1, 4, A2C2f, [512, True, 4]]
+  - [-1, 1, DSConv, [1024, 3, 2]] # P5/32
+  - [-1, 4, A2C2f, [1024, True, 1]] # 10
+
+
+head:
+  - [[-5, -3, -1], 2, HyperACE, [512, 8, True, True]] #修改了处理逻辑使得后面几个参数可缺省，详见task.py/parse_model
+  - [-1, 1, DSConv, [512, 1, 2]] # 适配下一层：分辨率减半，维度加倍
+  - [-1, 1, DSC3k2, [512, False]]
+  - [-1, 1, DSConv, [512, 3, 1]]
+  - [-1, 1, Conv, [512, 1, 1]]
+  - [-1, 1, DSConv, [1024, 3, 1]] # (P5/32-large)
+
+  - [-2, 1, Conv, [256, 1, 1]]
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 8], 1, Concat, [1]] # cat backbone P4
+  - [-1, 1, DSC3k2, [512, False]]
+  - [-1, 1, DSC3k2, [512, False]]
+  - [-1, 1, Conv, [256, 1, 1]]
+  - [-1, 1, DSConv, [512, 3, 1]] # (P4/16-medium)
+
+  - [-2, 1, Conv, [128, 1, 1]]
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 5], 1, Concat, [1]] # cat backbone P3
+  - [-1, 1, DSC3k2, [256, False]]
+  - [-1, 2, DSC3k2, [256, False]] # (P3/8-small)
+
+  - [[16, 23, 28], 1, Detect, [nc]] # Detect(P3, P4, P5)

@@ -110,7 +110,7 @@ class Outlooker(nn.Module):
     --kernel_size: kernel size in each window for outlook attention
     return: outlooker layer
     """
-    def __init__(self, dim, kernel_size, padding, stride=1,
+    def __init__(self, dim, kernel_size=3, padding=1, stride=1,
                  num_heads=1,mlp_ratio=3., attn_drop=0.,
                  drop_path=0., act_layer=nn.GELU,
                  norm_layer=nn.LayerNorm, qkv_bias=False,

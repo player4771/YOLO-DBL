@@ -19,7 +19,7 @@ backbone: #假设输入尺寸为640x640
   - [-1, 4, A2C2f, [1024, True, 1]] # 8 -> 9,14
 
 head: #args中不包含c1, c1由上一层的输出自动决定
-  - [[4, 6, 8], 2, HyperACE, [512, 8, True, True, 0.5, 1, "both"]] # 9 -> 11,12,18,27, 以下通道数都以512为基准
+  - [[4, 6, 8], 2, HyperACE, [512, 8, True, True, 0.5, 1, "both"]] # 9 -> 10,11,12,18,27, 以下通道数都以512为基准
   - [-1, 1, nn.Upsample, [None, 2, "nearest"]] # 10 -> 13,22
   - [ 9, 1, DownsampleConv, []] # 11 -> 14,31
 
@@ -45,7 +45,7 @@ head: #args中不包含c1, c1由上一层的输出自动决定
 
   - [26, 1, Conv, [512, 3, 2]] # 28
   - [[-1, 14], 1, Concat, [1]] # 29, cat head P5
-  - [-1, 2, DSC3k2, [1024,True]] # 30(P5/32-large)
+  - [-1, 2, DSC3k2, [1024, True]] # 30(P5/32-large)
   - [[-1, 11], 1, FullPAD_Tunnel, []] # 31 -> Detect
   
   - [[23, 27, 31], 1, Detect, [nc]] # Detect(P3, P4, P5)

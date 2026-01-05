@@ -71,6 +71,10 @@ from ultralytics.nn.modules import (
     FullPAD_Tunnel,
     DSC3k2,
     CBAM,
+    TransformerBlock,
+
+    HyperACE2,
+    DSBottleneck,
 )
 from ultralytics.utils import DEFAULT_CFG_DICT, DEFAULT_CFG_KEYS, LOGGER, colorstr, emojis, yaml_load
 from ultralytics.utils.checks import check_requirements, check_suffix, check_yaml
@@ -96,6 +100,7 @@ from ultralytics.utils.torch_utils import (
 
 from .modules_upsample import * # upsample modules
 from .modules_attention import * # attention modules
+from .structures import *
 
 
 class BaseModel(nn.Module):
@@ -1009,6 +1014,7 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             A2C2f,
             DSC3k2,
             DSConv,
+            TransformerBlock,
 
             FEM,
             EUCB,
@@ -1028,6 +1034,12 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             PSAModule,
             CoordAttention,
             GAM,
+            UIB,
+            RepViTBlock,
+            GhostModuleV3,
+            GhostBottleneckV3,
+            MHSA_YOLO,
+            DSBottleneck,
         }:
             c1, c2 = ch[f], args[0]
             if c2 != nc:  # if c2 not equal to number of classes (i.e. for Classify() output)
@@ -1103,7 +1115,7 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             args = [c1, c2, *args[1:]]
         elif m is CBFuse:
             c2 = ch[f[-1]]
-        elif m is HyperACE:
+        elif m in (HyperACE, HyperACE2):
             legacy = False
             c1 = ch[f[1]]
             c2 = args[0]
@@ -1138,7 +1150,7 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
         elif m is FFM_Concat3:
             c2 = sum(ch[x] for x in f)
             args = [args[0], c2 // 4, c2 // 2, c2 // 4]
-        elif m in ( #参数形如c1, **kwargs，只需c1不虚c2的模块
+        elif m in ( #参数形如c1, **kwargs，只需c1不需c2的模块
             DySample,
             CBAM,
             SLA,
@@ -1157,9 +1169,20 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             SCAM,
             ELA,
             CAA,
+            BoTAttention_YOLO,
+            AIFI,
+            DeBiAttentionBlock,
+            CoTNetLayer,
+            TripletAttention,
         ):
             c1, c2 = ch[f], ch[f] #实际上yaml中的c1并没有被使用
             args = [c1, *args[1:]] #用c1替换args[0]是因为有缩放，二者未必相等
+        elif m is GiraffeNeckV2:
+            c1 = [ch[x] for x in f]
+            c2 = args[0]
+            args = [c1, *args]
+        elif m is ExtractLayer:
+            c2 = ch[f][args[0]]
         else:
             c2 = ch[f]
 

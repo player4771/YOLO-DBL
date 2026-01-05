@@ -8,19 +8,18 @@ scales: # model compound scaling constants, i.e. 'model=yolov13n.yaml' will call
 
 backbone: #v13 -> v3
   # [from, repeats, module, args]
-  - [ -1, 1, Conv, [ 32, 3, 1 ] ] # 0
-  - [ -1, 1, Conv, [ 64, 3, 2 ] ] # 1-P1/2
-  - [ -1, 1, Bottleneck, [ 64 ] ]
-  - [ -1, 1, Conv, [ 128, 3, 2 ] ] # 3-P2/4
-  - [ -1, 2, Bottleneck, [ 128 ] ]
-  - [ -1, 1, Conv, [ 256, 3, 2 ] ] # 5-P3/8
-  - [ -1, 8, Bottleneck, [ 256 ] ]
-  # 添加 1x1 卷积将 P3/8 的通道从 256 提升至 512，以匹配 v13 head 的需求
-  - [ -1, 1, Conv, [ 512, 1, 1 ] ] # 7 (适配后的 P3/8, 512 ch)
-  - [ -1, 1, Conv, [ 512, 3, 2 ] ] # 8-P4/16
-  - [ -1, 8, Bottleneck, [ 512 ] ]
-  - [ -1, 1, Conv, [ 1024, 3, 2 ] ] # 10-P5/32
-  - [ -1, 4, Bottleneck, [ 1024 ] ] # 11
+  - [-1, 1, Conv, [32, 3, 1]] # 0
+  - [-1, 1, Conv, [64, 3, 2]] # 1-P1/2
+  - [-1, 1, Bottleneck, [64]]
+  - [-1, 1, Conv, [128, 3, 2]] # 3-P2/4
+  - [-1, 2, Bottleneck, [128]]
+  - [-1, 1, Conv, [256, 3, 2]] # 5-P3/8
+  - [-1, 8, Bottleneck, [256]]
+  - [-1, 1, Conv, [512, 1, 1]] # 7 (适配后的 P3/8, 512 ch)
+  - [-1, 1, Conv, [512, 3, 2]] # 8-P4/16
+  - [-1, 8, Bottleneck, [512]]
+  - [-1, 1, Conv, [1024, 3, 2]] # 10-P5/32
+  - [-1, 4, Bottleneck, [1024]] # 11
 
 head: #DSC3k2 -> Bottleneck, FullPAD_Tunnel->Attntion
   - [[7, 9, 11], 2, HyperACE, [512, 8, True, True, 0.5, 1, "both"]] # 12
@@ -40,20 +39,20 @@ head: #DSC3k2 -> Bottleneck, FullPAD_Tunnel->Attntion
   - [[-1, 16], 1, Concat, [1]] # 23
   - [-1, 2, Bottleneck, [256, True]] # 24
   - [13, 1, Conv, [256, 1, 1]] # 25
-  - [[24, 25], 1, FullPAD_Tunnel, []] # 26
-  - [-1, 1, EUCB, [256]] # 27
+  - [-1, 1, SLA, [256]] # 26
+  - [[-2, -1], 1, FullPAD_Tunnel, []] # 27
 
   - [-1, 1, Conv, [256, 3, 2]] # 28
   - [[-1, 21], 1, Concat, [1]] # 29
   - [-1, 2, Bottleneck, [512, True]] # 30
-  - [[-1, 12], 1, FullPAD_Tunnel, []] # 31
-  - [-1, 1, EUCB, [512]] # 32
+  - [-1, 1, SLA, [512]] # 31
+  - [[-1, 12], 1, FullPAD_Tunnel, []] # 32
 
   - [30, 1, Conv, [512, 3, 2]]# 33
   - [[-1, 17], 1, Concat, [1]] # 34
   - [-1, 2, Bottleneck, [1024,True]]  # 35
-  - [[-1, 14], 1, FullPAD_Tunnel, []] # 36
-  - [-1, 1, EUCB, [1024]] # 37
+  - [-1, 1, SLA, [1024]] # 36
+  - [[-1, 14], 1, FullPAD_Tunnel, []] # 37
 
   # Detect(P3, P4, P5)
   - [[27, 32, 37], 1, Detect, [nc]] # 38

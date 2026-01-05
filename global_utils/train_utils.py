@@ -3,8 +3,8 @@ import yaml
 import torch
 import numpy as np
 from tqdm import tqdm
+from thop import profile
 from pathlib import Path
-from datetime import datetime
 
 from .dataset import YOLODataset
 from .tools import find_new_dir, WindowsRouser, time_now_str
@@ -78,7 +78,7 @@ class Trainer:
             amp=True,
             epochs=20,
             lr=0.001,
-            batch_size=8,
+            batch=8,
             num_workers=4,
             patience=7,
             warmup=0,
@@ -98,7 +98,7 @@ class Trainer:
             'amp': amp,
             'epochs': epochs,
             'lr': lr,
-            'batch_size': batch_size,
+            'batch': batch,
             'num_workers': num_workers,
             'patience': patience,
             'warmup': warmup,
@@ -137,12 +137,12 @@ class Trainer:
 
         # 创建 DataLoader
         self.train_loader = torch.utils.data.DataLoader(
-            dataset_train, batch_size=batch_size, num_workers=num_workers,
+            dataset_train, batch_size=batch, num_workers=num_workers,
             pin_memory=True, shuffle=True, persistent_workers=True,
             collate_fn=collate_fn
         )
         self.val_loader = torch.utils.data.DataLoader(
-            dataset_val, batch_size=batch_size, num_workers=num_workers,
+            dataset_val, batch_size=batch, num_workers=num_workers,
             pin_memory=True, shuffle=False, persistent_workers=True,
             collate_fn=collate_fn
         )
@@ -172,6 +172,9 @@ class Trainer:
         rouser = WindowsRouser()
         if self.cfg['no_sleep']:
             rouser.start()
+
+        flops, params = profile(self.model, (torch.rand(1, 3, 256, 256).to(self.device),))
+        print(f"Info: {flops/1e9:.4f} GFLOPs, {params/1e6:.4f} params", flush=True)
 
         for epoch in range(self.cfg['epochs']):
             self.model.train()

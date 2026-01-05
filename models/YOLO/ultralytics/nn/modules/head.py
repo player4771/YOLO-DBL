@@ -19,7 +19,46 @@ __all__ = "Detect", "Segment", "Pose", "Classify", "OBB", "RTDETRDecoder", "v10D
 
 
 class Detect(nn.Module):
-    """YOLO Detect head for detection models."""
+    """YOLO Detect head for object detection models.
+
+    This class implements the detection head used in YOLO models for predicting bounding boxes and class probabilities.
+    It supports both training and inference modes, with optional end-to-end detection capabilities.
+
+    Attributes:
+        dynamic (bool): Force grid reconstruction.
+        export (bool): Export mode flag.
+        format (str): Export format.
+        end2end (bool): End-to-end detection mode.
+        max_det (int): Maximum detections per image.
+        shape (tuple): Input shape.
+        anchors (torch.Tensor): Anchor points.
+        strides (torch.Tensor): Feature map strides.
+        legacy (bool): Backward compatibility for v3/v5/v8/v9 models.
+        xyxy (bool): Output format, xyxy or xywh.
+        nc (int): Number of classes.
+        nl (int): Number of detection layers.
+        reg_max (int): DFL channels.
+        no (int): Number of outputs per anchor.
+        stride (torch.Tensor): Strides computed during build.
+        cv2 (nn.ModuleList): Convolution layers for box regression.
+        cv3 (nn.ModuleList): Convolution layers for classification.
+        dfl (nn.Module): Distribution Focal Loss layer.
+        one2one_cv2 (nn.ModuleList): One-to-one convolution layers for box regression.
+        one2one_cv3 (nn.ModuleList): One-to-one convolution layers for classification.
+
+    Methods:
+        forward: Perform forward pass and return predictions.
+        forward_end2end: Perform forward pass for end-to-end detection.
+        bias_init: Initialize detection head biases.
+        decode_bboxes: Decode bounding boxes from predictions.
+        postprocess: Post-process model predictions.
+
+    Examples:
+        Create a detection head for 80 classes
+        >>> detect = Detect(nc=80, ch=(256, 512, 1024))
+        >>> x = [torch.randn(1, 256, 80, 80), torch.randn(1, 512, 40, 40), torch.randn(1, 1024, 20, 20)]
+        >>> outputs = detect(x)
+    """
 
     dynamic = False  # force grid reconstruction
     export = False  # export mode
@@ -31,8 +70,13 @@ class Detect(nn.Module):
     strides = torch.empty(0)  # init
     legacy = False  # backward compatibility for v3/v5/v8/v9 models
 
-    def __init__(self, nc=80, ch=()):
-        """Initializes the YOLO detection layer with specified number of classes and channels."""
+    def __init__(self, nc: int = 80, ch: tuple = ()):
+        """Initialize the YOLO detection layer with specified number of classes and channels.
+
+        Args:
+            nc (int): Number of classes.
+            ch (tuple): Tuple of channel sizes from backbone feature maps.
+        """
         super().__init__()
         self.nc = nc  # number of classes
         self.nl = len(ch)  # number of detection layers
@@ -61,8 +105,8 @@ class Detect(nn.Module):
             self.one2one_cv2 = copy.deepcopy(self.cv2)
             self.one2one_cv3 = copy.deepcopy(self.cv3)
 
-    def forward(self, x):
-        """Concatenates and returns predicted bounding boxes and class probabilities."""
+    def forward(self, x: list[torch.Tensor]) -> list[torch.Tensor] | tuple:
+        """Concatenate and return predicted bounding boxes and class probabilities."""
         if self.end2end:
             return self.forward_end2end(x)
 
@@ -73,16 +117,15 @@ class Detect(nn.Module):
         y = self._inference(x)
         return y if self.export else (y, x)
 
-    def forward_end2end(self, x):
-        """
-        Performs forward pass of the v10Detect module.
+    def forward_end2end(self, x: list[torch.Tensor]) -> dict | tuple:
+        """Perform forward pass of the v10Detect module.
 
         Args:
-            x (tensor): Input tensor.
+            x (list[torch.Tensor]): Input feature maps from different levels.
 
         Returns:
-            (dict, tensor): If not in training mode, returns a dictionary containing the outputs of both one2many and one2one detections.
-                           If in training mode, returns a dictionary containing the outputs of one2many and one2one detections separately.
+            outputs (dict | tuple): Training mode returns dict with one2many and one2one outputs. Inference mode returns
+                processed detections or tuple with detections and raw outputs.
         """
         x_detach = [xi.detach() for xi in x]
         one2one = [
@@ -97,8 +140,15 @@ class Detect(nn.Module):
         y = self.postprocess(y.permute(0, 2, 1), self.max_det, self.nc)
         return y if self.export else (y, {"one2many": x, "one2one": one2one})
 
-    def _inference(self, x):
-        """Decode predicted bounding boxes and class probabilities based on multiple-level feature maps."""
+    def _inference(self, x: list[torch.Tensor]) -> torch.Tensor:
+        """Decode predicted bounding boxes and class probabilities based on multiple-level feature maps.
+
+        Args:
+            x (list[torch.Tensor]): List of feature maps from different detection layers.
+
+        Returns:
+            (torch.Tensor): Concatenated tensor of decoded bounding boxes and class probabilities.
+        """
         # Inference path
         shape = x[0].shape  # BCHW
         x_cat = torch.cat([xi.view(shape[0], self.no, -1) for xi in x], 2)
@@ -148,15 +198,14 @@ class Detect(nn.Module):
         return dist2bbox(bboxes, anchors, xywh=xywh and (not self.end2end), dim=1)
 
     @staticmethod
-    def postprocess(preds: torch.Tensor, max_det: int, nc: int = 80):
-        """
-        Post-processes YOLO model predictions.
+    def postprocess(preds: torch.Tensor, max_det: int, nc: int = 80) -> torch.Tensor:
+        """Post-process YOLO model predictions.
 
         Args:
             preds (torch.Tensor): Raw predictions with shape (batch_size, num_anchors, 4 + nc) with last dimension
                 format [x, y, w, h, class_probs].
             max_det (int): Maximum detections per image.
-            nc (int, optional): Number of classes. Default: 80.
+            nc (int, optional): Number of classes.
 
         Returns:
             (torch.Tensor): Processed predictions with shape (batch_size, min(max_det, num_anchors), 6) and last
@@ -173,10 +222,35 @@ class Detect(nn.Module):
 
 
 class Segment(Detect):
-    """YOLO Segment head for segmentation models."""
+    """YOLO Segment head for segmentation models.
 
-    def __init__(self, nc=80, nm=32, npr=256, ch=()):
-        """Initialize the YOLO model attributes such as the number of masks, prototypes, and the convolution layers."""
+    This class extends the Detect head to include mask prediction capabilities for instance segmentation tasks.
+
+    Attributes:
+        nm (int): Number of masks.
+        npr (int): Number of protos.
+        proto (Proto): Prototype generation module.
+        cv4 (nn.ModuleList): Convolution layers for mask coefficients.
+
+    Methods:
+        forward: Return model outputs and mask coefficients.
+
+    Examples:
+        Create a segmentation head
+        >>> segment = Segment(nc=80, nm=32, npr=256, ch=(256, 512, 1024))
+        >>> x = [torch.randn(1, 256, 80, 80), torch.randn(1, 512, 40, 40), torch.randn(1, 1024, 20, 20)]
+        >>> outputs = segment(x)
+    """
+
+    def __init__(self, nc: int = 80, nm: int = 32, npr: int = 256, ch: tuple = ()):
+        """Initialize the YOLO model attributes such as the number of masks, prototypes, and the convolution layers.
+
+        Args:
+            nc (int): Number of classes.
+            nm (int): Number of masks.
+            npr (int): Number of protos.
+            ch (tuple): Tuple of channel sizes from backbone feature maps.
+        """
         super().__init__(nc, ch)
         self.nm = nm  # number of masks
         self.npr = npr  # number of protos
@@ -185,7 +259,7 @@ class Segment(Detect):
         c4 = max(ch[0] // 4, self.nm)
         self.cv4 = nn.ModuleList(nn.Sequential(Conv(x, c4, 3), Conv(c4, c4, 3), nn.Conv2d(c4, self.nm, 1)) for x in ch)
 
-    def forward(self, x):
+    def forward(self, x: list[torch.Tensor]) -> tuple | list[torch.Tensor]:
         """Return model outputs and mask coefficients if training, otherwise return outputs and mask coefficients."""
         p = self.proto(x[0])  # mask protos
         bs = p.shape[0]  # batch size
@@ -198,18 +272,42 @@ class Segment(Detect):
 
 
 class OBB(Detect):
-    """YOLO OBB detection head for detection with rotation models."""
+    """YOLO OBB detection head for detection with rotation models.
 
-    def __init__(self, nc=80, ne=1, ch=()):
-        """Initialize OBB with number of classes `nc` and layer channels `ch`."""
+    This class extends the Detect head to include oriented bounding box prediction with rotation angles.
+
+    Attributes:
+        ne (int): Number of extra parameters.
+        cv4 (nn.ModuleList): Convolution layers for angle prediction.
+        angle (torch.Tensor): Predicted rotation angles.
+
+    Methods:
+        forward: Concatenate and return predicted bounding boxes and class probabilities.
+        decode_bboxes: Decode rotated bounding boxes.
+
+    Examples:
+        Create an OBB detection head
+        >>> obb = OBB(nc=80, ne=1, ch=(256, 512, 1024))
+        >>> x = [torch.randn(1, 256, 80, 80), torch.randn(1, 512, 40, 40), torch.randn(1, 1024, 20, 20)]
+        >>> outputs = obb(x)
+    """
+
+    def __init__(self, nc: int = 80, ne: int = 1, ch: tuple = ()):
+        """Initialize OBB with number of classes `nc` and layer channels `ch`.
+
+        Args:
+            nc (int): Number of classes.
+            ne (int): Number of extra parameters.
+            ch (tuple): Tuple of channel sizes from backbone feature maps.
+        """
         super().__init__(nc, ch)
         self.ne = ne  # number of extra parameters
 
         c4 = max(ch[0] // 4, self.ne)
         self.cv4 = nn.ModuleList(nn.Sequential(Conv(x, c4, 3), Conv(c4, c4, 3), nn.Conv2d(c4, self.ne, 1)) for x in ch)
 
-    def forward(self, x):
-        """Concatenates and returns predicted bounding boxes and class probabilities."""
+    def forward(self, x: list[torch.Tensor]) -> torch.Tensor | tuple:
+        """Concatenate and return predicted bounding boxes and class probabilities."""
         bs = x[0].shape[0]  # batch size
         angle = torch.cat([self.cv4[i](x[i]).view(bs, self.ne, -1) for i in range(self.nl)], 2)  # OBB theta logits
         # NOTE: set `angle` as an attribute so that `decode_bboxes` could use it.
@@ -222,16 +320,40 @@ class OBB(Detect):
             return x, angle
         return torch.cat([x, angle], 1) if self.export else (torch.cat([x[0], angle], 1), (x[1], angle))
 
-    def decode_bboxes(self, bboxes, anchors):
+    def decode_bboxes(self, bboxes: torch.Tensor, anchors: torch.Tensor) -> torch.Tensor:
         """Decode rotated bounding boxes."""
         return dist2rbox(bboxes, self.angle, anchors, dim=1)
 
 
 class Pose(Detect):
-    """YOLO Pose head for keypoints models."""
+    """YOLO Pose head for keypoints models.
 
-    def __init__(self, nc=80, kpt_shape=(17, 3), ch=()):
-        """Initialize YOLO network with default parameters and Convolutional Layers."""
+    This class extends the Detect head to include keypoint prediction capabilities for pose estimation tasks.
+
+    Attributes:
+        kpt_shape (tuple): Number of keypoints and dimensions (2 for x,y or 3 for x,y,visible).
+        nk (int): Total number of keypoint values.
+        cv4 (nn.ModuleList): Convolution layers for keypoint prediction.
+
+    Methods:
+        forward: Perform forward pass through YOLO model and return predictions.
+        kpts_decode: Decode keypoints from predictions.
+
+    Examples:
+        Create a pose detection head
+        >>> pose = Pose(nc=80, kpt_shape=(17, 3), ch=(256, 512, 1024))
+        >>> x = [torch.randn(1, 256, 80, 80), torch.randn(1, 512, 40, 40), torch.randn(1, 1024, 20, 20)]
+        >>> outputs = pose(x)
+    """
+
+    def __init__(self, nc: int = 80, kpt_shape: tuple = (17, 3), ch: tuple = ()):
+        """Initialize YOLO network with default parameters and Convolutional Layers.
+
+        Args:
+            nc (int): Number of classes.
+            kpt_shape (tuple): Number of keypoints, number of dims (2 for x,y or 3 for x,y,visible).
+            ch (tuple): Tuple of channel sizes from backbone feature maps.
+        """
         super().__init__(nc, ch)
         self.kpt_shape = kpt_shape  # number of keypoints, number of dims (2 for x,y or 3 for x,y,visible)
         self.nk = kpt_shape[0] * kpt_shape[1]  # number of keypoints total
@@ -239,7 +361,7 @@ class Pose(Detect):
         c4 = max(ch[0] // 4, self.nk)
         self.cv4 = nn.ModuleList(nn.Sequential(Conv(x, c4, 3), Conv(c4, c4, 3), nn.Conv2d(c4, self.nk, 1)) for x in ch)
 
-    def forward(self, x):
+    def forward(self, x: list[torch.Tensor]) -> torch.Tensor | tuple:
         """Perform forward pass through YOLO model and return predictions."""
         bs = x[0].shape[0]  # batch size
         kpt = torch.cat([self.cv4[i](x[i]).view(bs, self.nk, -1) for i in range(self.nl)], -1)  # (bs, 17*3, h*w)
@@ -249,8 +371,8 @@ class Pose(Detect):
         pred_kpt = self.kpts_decode(bs, kpt)
         return torch.cat([x, pred_kpt], 1) if self.export else (torch.cat([x[0], pred_kpt], 1), (x[1], kpt))
 
-    def kpts_decode(self, bs, kpts):
-        """Decodes keypoints."""
+    def kpts_decode(self, bs: int, kpts: torch.Tensor) -> torch.Tensor:
+        """Decode keypoints from predictions."""
         ndim = self.kpt_shape[1]
         if self.export:
             if self.format in {
@@ -280,12 +402,40 @@ class Pose(Detect):
 
 
 class Classify(nn.Module):
-    """YOLO classification head, i.e. x(b,c1,20,20) to x(b,c2)."""
+    """YOLO classification head, i.e. x(b,c1,20,20) to x(b,c2).
+
+    This class implements a classification head that transforms feature maps into class predictions.
+
+    Attributes:
+        export (bool): Export mode flag.
+        conv (Conv): Convolutional layer for feature transformation.
+        pool (nn.AdaptiveAvgPool2d): Global average pooling layer.
+        drop (nn.Dropout): Dropout layer for regularization.
+        linear (nn.Linear): Linear layer for final classification.
+
+    Methods:
+        forward: Perform forward pass of the YOLO model on input image data.
+
+    Examples:
+        Create a classification head
+        >>> classify = Classify(c1=1024, c2=1000)
+        >>> x = torch.randn(1, 1024, 20, 20)
+        >>> output = classify(x)
+    """
 
     export = False  # export mode
 
-    def __init__(self, c1, c2, k=1, s=1, p=None, g=1):
-        """Initializes YOLO classification head to transform input tensor from (b,c1,20,20) to (b,c2) shape."""
+    def __init__(self, c1: int, c2: int, k: int = 1, s: int = 1, p: int | None = None, g: int = 1):
+        """Initialize YOLO classification head to transform input tensor from (b,c1,20,20) to (b,c2) shape.
+
+        Args:
+            c1 (int): Number of input channels.
+            c2 (int): Number of output classes.
+            k (int, optional): Kernel size.
+            s (int, optional): Stride.
+            p (int, optional): Padding.
+            g (int, optional): Groups.
+        """
         super().__init__()
         c_ = 1280  # efficientnet_b0 size
         self.conv = Conv(c1, c_, k, s, p, g)
@@ -293,8 +443,8 @@ class Classify(nn.Module):
         self.drop = nn.Dropout(p=0.0, inplace=True)
         self.linear = nn.Linear(c_, c2)  # to x(b,c2)
 
-    def forward(self, x):
-        """Performs a forward pass of the YOLO model on input image data."""
+    def forward(self, x: list[torch.Tensor] | torch.Tensor) -> torch.Tensor | tuple:
+        """Perform forward pass of the YOLO model on input image data."""
         if isinstance(x, list):
             x = torch.cat(x, 1)
         x = self.linear(self.drop(self.pool(self.conv(x)).flatten(1)))
@@ -305,10 +455,36 @@ class Classify(nn.Module):
 
 
 class WorldDetect(Detect):
-    """Head for integrating YOLO detection models with semantic understanding from text embeddings."""
+    """Head for integrating YOLO detection models with semantic understanding from text embeddings.
 
-    def __init__(self, nc=80, embed=512, with_bn=False, ch=()):
-        """Initialize YOLO detection layer with nc classes and layer channels ch."""
+    This class extends the standard Detect head to incorporate text embeddings for enhanced semantic understanding in
+    object detection tasks.
+
+    Attributes:
+        cv3 (nn.ModuleList): Convolution layers for embedding features.
+        cv4 (nn.ModuleList): Contrastive head layers for text-vision alignment.
+
+    Methods:
+        forward: Concatenate and return predicted bounding boxes and class probabilities.
+        bias_init: Initialize detection head biases.
+
+    Examples:
+        Create a WorldDetect head
+        >>> world_detect = WorldDetect(nc=80, embed=512, with_bn=False, ch=(256, 512, 1024))
+        >>> x = [torch.randn(1, 256, 80, 80), torch.randn(1, 512, 40, 40), torch.randn(1, 1024, 20, 20)]
+        >>> text = torch.randn(1, 80, 512)
+        >>> outputs = world_detect(x, text)
+    """
+
+    def __init__(self, nc: int = 80, embed: int = 512, with_bn: bool = False, ch: tuple = ()):
+        """Initialize YOLO detection layer with nc classes and layer channels ch.
+
+        Args:
+            nc (int): Number of classes.
+            embed (int): Embedding dimension.
+            with_bn (bool): Whether to use batch normalization in contrastive head.
+            ch (tuple): Tuple of channel sizes from backbone feature maps.
+        """
         super().__init__(nc, ch)
         c3 = max(ch[0], min(self.nc, 100))
         self.cv3 = nn.ModuleList(nn.Sequential(Conv(x, c3, 3), Conv(c3, c3, 3), nn.Conv2d(c3, embed, 1)) for x in ch)
@@ -590,27 +766,39 @@ class RTDETRDecoder(nn.Module):
 
 
 class v10Detect(Detect):
-    """
-    v10 Detection head from https://arxiv.org/pdf/2405.14458.
+    """v10 Detection head from https://arxiv.org/pdf/2405.14458.
 
-    Args:
-        nc (int): Number of classes.
-        ch (tuple): Tuple of channel sizes.
+    This class implements the YOLOv10 detection head with dual-assignment training and consistent dual predictions for
+    improved efficiency and performance.
 
     Attributes:
+        end2end (bool): End-to-end detection mode.
         max_det (int): Maximum number of detections.
+        cv3 (nn.ModuleList): Light classification head layers.
+        one2one_cv3 (nn.ModuleList): One-to-one classification head layers.
 
     Methods:
-        __init__(self, nc=80, ch=()): Initializes the v10Detect object.
-        forward(self, x): Performs forward pass of the v10Detect module.
-        bias_init(self): Initializes biases of the Detect module.
+        __init__: Initialize the v10Detect object with specified number of classes and input channels.
+        forward: Perform forward pass of the v10Detect module.
+        bias_init: Initialize biases of the Detect module.
+        fuse: Remove the one2many head for inference optimization.
 
+    Examples:
+        Create a v10Detect head
+        >>> v10_detect = v10Detect(nc=80, ch=(256, 512, 1024))
+        >>> x = [torch.randn(1, 256, 80, 80), torch.randn(1, 512, 40, 40), torch.randn(1, 1024, 20, 20)]
+        >>> outputs = v10_detect(x)
     """
 
     end2end = True
 
-    def __init__(self, nc=80, ch=()):
-        """Initializes the v10Detect object with the specified number of classes and input channels."""
+    def __init__(self, nc: int = 80, ch: tuple = ()):
+        """Initialize the v10Detect object with the specified number of classes and input channels.
+
+        Args:
+            nc (int): Number of classes.
+            ch (tuple): Tuple of channel sizes from backbone feature maps.
+        """
         super().__init__(nc, ch)
         c3 = max(ch[0], min(self.nc, 100))  # channels
         # Light cls head
@@ -623,3 +811,7 @@ class v10Detect(Detect):
             for x in ch
         )
         self.one2one_cv3 = copy.deepcopy(self.cv3)
+
+    def fuse(self):
+        """Remove the one2many head for inference optimization."""
+        self.cv2 = self.cv3 = nn.ModuleList([nn.Identity()] * self.nl)

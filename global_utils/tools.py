@@ -78,8 +78,20 @@ class WindowsRouser:
         ctypes.windll.kernel32.SetThreadExecutionState(0x80000000)
         self.activated = False
 
-def time_now_str() -> str:
-    return time.strftime('%Y/%m/%d %H:%M:%S', time.localtime())
+def time_now_str(sep_date='/', sep_time=':', sep_datetime=' ') -> str:
+    """
+    获取当前时间的格式化字符串。\n
+    默认格式为"%Y/%m/%d %H:%M:%S"，如"1145/14/19 19:81:00"\n
+    (好像有哪里不对)\n
+    注：由于python不区分char和str，间隔符实际上可以是多个字符
+
+    :param sep_date: 年月日分隔符
+    :param sep_time: 时分秒分隔符
+    :param sep_datetime: 日期与时间之间的间隔符
+    :return: 格式化的日期时间字符串
+    """
+    format_ = f'%Y{sep_date}%m{sep_time}%d{sep_datetime}%H{sep_time}%M{sep_time}%S' #有点抽象...
+    return time.strftime(format_, time.localtime())
 
 def typename(class_):
     #如: <class 'ultralytics.nn.modules_attention.BiFormer.biformer.BiFormer'> -> BiFormer

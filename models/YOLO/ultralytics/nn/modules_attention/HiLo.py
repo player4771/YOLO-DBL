@@ -4,6 +4,7 @@
 import math
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 class HiLo(nn.Module):
     """
@@ -120,15 +121,26 @@ class HiLo(nn.Module):
         """x为正常的 NCHW 四维张量"""
         N, C, H, W = x.shape
 
+        pad_h = (self.ws - H % self.ws) % self.ws
+        pad_w = (self.ws - W % self.ws) % self.ws
+        if pad_h > 0 or pad_w > 0:
+            # F.pad对NCHW输入的参数顺序是(W_left, W_right, H_top, H_bottom)
+            #向右下填充
+            x = F.pad(x, (0, pad_w, 0, pad_h))
+        Hp, Wp = x.shape[2], x.shape[3]
+
         # 这样换是因为直接处理四位张量显存占用会巨高
         # NCHW中的N是BCN中的B, N = H * W
         #   NCHW      -> BCN       ->      B  N  C
         x = x.flatten(start_dim=2).permute(0, 2, 1)
 
-        x = self.forward_old(x, H, W) # x: BNC
+        x = self.forward_old(x, Hp, Wp) # x: BNC
 
         #   BNC    -> B  C  N       -> N, C, H, W
-        x = x.permute(0, 2, 1).reshape(N, C, H, W)
+        x = x.permute(0, 2, 1).reshape(N, C, Hp, Wp)
+
+        if pad_h > 0 or pad_w > 0:
+            x = x[:, :, :H, :W]
 
         return x
 

@@ -995,7 +995,7 @@ def get_pe_layer(emb_dim, pe_dim=None, name='none'):
 
 class DeBiAttentionBlock(nn.Module):
     def __init__(self, dim, drop_path=0., layer_scale_init_value=-1,
-                       num_heads=8, n_win=7, qk_dim=None, qk_scale=None,
+                       num_heads=8, n_win=8, qk_dim=None, qk_scale=None,
                        kv_per_win=4, kv_downsample_ratio=4, 
                        kv_downsample_kernel=None, kv_downsample_mode='ada_avgpool',
                        topk=4, param_attention="qkvo", param_routing=False, 
@@ -1041,12 +1041,13 @@ class DeBiAttentionBlock(nn.Module):
             self.attn1 = DeBiLevelRoutingAttention(**args, topk=49, param_size=param_size)
             self.attn2 = DeBiLevelRoutingAttention(**args, topk=49, param_size=param_size)
         elif topk == 0:
-            self.attn = nn.Sequential(Rearrange('n h w c -> n c h w'), # compatiability
-                                      nn.Conv2d(dim, dim, 1), # pseudo qkv linear
-                                      nn.Conv2d(dim, dim, 5, padding=2, groups=dim), # pseudo attention
-                                      nn.Conv2d(dim, dim, 1), # pseudo out linear
-                                      Rearrange('n c h w -> n h w c')
-                                     )
+            self.attn = nn.Sequential(
+                Rearrange('n h w c -> n c h w'), # compatibility
+                nn.Conv2d(dim, dim, 1), # pseudo qkv linear
+                nn.Conv2d(dim, dim, 5, padding=2, groups=dim), # pseudo attention
+                nn.Conv2d(dim, dim, 1), # pseudo out linear
+                Rearrange('n c h w -> n h w c')
+            )
             
         
         self.norm2 = nn.LayerNorm(dim, eps=1e-6)

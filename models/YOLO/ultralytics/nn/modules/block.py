@@ -54,7 +54,11 @@ __all__ = (
     "DownsampleConv", 
     "FullPAD_Tunnel",
     "DSC3k2",
-    "C3k", #add
+
+    "C3k",
+    "A2C2f",
+    "HyperACE2",
+    "DSBottleneck"
 )
 
 
@@ -433,7 +437,7 @@ class MaxSigmoidAttnBlock(nn.Module):
         bs, _, h, w = x.shape
 
         guide = self.gl(guide)
-        guide = guide.view(bs, -1, self.nh, self.hc)
+        guide = guide.view(bs, guide.shape[1], self.nh, self.hc)
         embed = self.ec(x) if self.ec is not None else x
         embed = embed.view(bs, self.nh, self.hc, h, w)
 
@@ -1145,10 +1149,10 @@ class TorchVision(nn.Module):
         else:
             self.m = torchvision.models.__dict__[model](pretrained=bool(weights))
         if unwrap:
-            layers = list(self.m.children())[:-truncate]
+            layers = list(self.m.children())
             if isinstance(layers[0], nn.Sequential):  # Second-level for some models like EfficientNet, Swin
                 layers = [*list(layers[0].children()), *layers[1:]]
-            self.m = nn.Sequential(*layers)
+            self.m = nn.Sequential(*(layers[:-truncate] if truncate else layers))
             self.split = split
         else:
             self.split = False
@@ -1181,32 +1185,38 @@ except Exception:
     #logger.warning("FlashAttention is not available on this device. Using scaled_dot_product_attention instead.")
 
 class AAttn(nn.Module):
-    """
-    Area-attention module with the requirement of flash attention.
+    """Area-attention module for YOLO models, providing efficient attention mechanisms.
+
+    This module implements an area-based attention mechanism that processes input features in a spatially-aware manner,
+    making it particularly effective for object detection tasks.
 
     Attributes:
-        dim (int): Number of hidden channels;
-        num_heads (int): Number of heads into which the attention mechanism is divided;
-        area (int, optional): Number of areas the feature map is divided. Defaults to 1.
+        area (int): Number of areas the feature map is divided.
+        num_heads (int): Number of heads into which the attention mechanism is divided.
+        head_dim (int): Dimension of each attention head.
+        qkv (Conv): Convolution layer for computing query, key and value tensors.
+        proj (Conv): Projection convolution layer.
+        pe (Conv): Position encoding convolution layer.
 
     Methods:
-        forward: Performs a forward process of input tensor and outputs a tensor after the execution of the area attention mechanism.
+        forward: Applies area-attention to input tensor.
 
     Examples:
-        >>> import torch
-        >>> from ultralytics.nn.modules import AAttn
-        >>> model = AAttn(dim=64, num_heads=2, area=4)
-        >>> x = torch.randn(2, 64, 128, 128)
-        >>> output = model(x)
+        >>> attn = AAttn(dim=256, num_heads=8, area=4)
+        >>> x = torch.randn(1, 256, 32, 32)
+        >>> output = attn(x)
         >>> print(output.shape)
-    
-    Notes: 
-        recommend that dim//num_heads be a multiple of 32 or 64.
-
+        torch.Size([1, 256, 32, 32])
     """
 
-    def __init__(self, dim, num_heads, area=1):
-        """Initializes the area-attention module, a simple yet efficient attention module for YOLO."""
+    def __init__(self, dim: int, num_heads: int, area: int = 1):
+        """Initialize an Area-attention module for YOLO models.
+
+        Args:
+            dim (int): Number of hidden channels.
+            num_heads (int): Number of heads into which the attention mechanism is divided.
+            area (int): Number of areas the feature map is divided.
+        """
         super().__init__()
         self.area = area
 
@@ -1214,59 +1224,49 @@ class AAttn(nn.Module):
         self.head_dim = head_dim = dim // num_heads
         all_head_dim = head_dim * self.num_heads
 
-        self.qk = Conv(dim, all_head_dim * 2, 1, act=False)
-        self.v = Conv(dim, all_head_dim, 1, act=False)
+        self.qkv = Conv(dim, all_head_dim * 3, 1, act=False)
         self.proj = Conv(all_head_dim, dim, 1, act=False)
+        self.pe = Conv(all_head_dim, dim, 7, 1, 3, g=dim, act=False)
 
-        self.pe = Conv(all_head_dim, dim, 5, 1, 2, g=dim, act=False)
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Process the input tensor through the area-attention.
 
+        Args:
+            x (torch.Tensor): Input tensor.
 
-    def forward(self, x):
-        """Processes the input tensor 'x' through the area-attention"""
+        Returns:
+            (torch.Tensor): Output tensor after area-attention.
+        """
         B, C, H, W = x.shape
         N = H * W
 
-        qk = self.qk(x).flatten(2).transpose(1, 2)
-        v = self.v(x)
-        pp = self.pe(v)
-        v = v.flatten(2).transpose(1, 2)
-
+        qkv = self.qkv(x).flatten(2).transpose(1, 2)
         if self.area > 1:
-            qk = qk.reshape(B * self.area, N // self.area, C * 2)
-            v = v.reshape(B * self.area, N // self.area, C)
-            B, N, _ = qk.shape
-        q, k = qk.split([C, C], dim=2)
-
-        if x.is_cuda and USE_FLASH_ATTN:
-            q = q.view(B, N, self.num_heads, self.head_dim)
-            k = k.view(B, N, self.num_heads, self.head_dim)
-            v = v.view(B, N, self.num_heads, self.head_dim)
-
-            x = flash_attn_func(
-                q.contiguous().half(),
-                k.contiguous().half(),
-                v.contiguous().half()
-            ).to(q.dtype)
-        else:
-            q = q.transpose(1, 2).view(B, self.num_heads, self.head_dim, N)
-            k = k.transpose(1, 2).view(B, self.num_heads, self.head_dim, N)
-            v = v.transpose(1, 2).view(B, self.num_heads, self.head_dim, N)
-
-            attn = (q.transpose(-2, -1) @ k) * (self.head_dim ** -0.5)
-            max_attn = attn.max(dim=-1, keepdim=True).values
-            exp_attn = torch.exp(attn - max_attn)
-            attn = exp_attn / exp_attn.sum(dim=-1, keepdim=True)
-            x = (v @ attn.transpose(-2, -1))
-
-            x = x.permute(0, 3, 1, 2)
+            qkv = qkv.reshape(B * self.area, N // self.area, C * 3)
+            B, N, _ = qkv.shape
+        q, k, v = (
+            qkv.view(B, N, self.num_heads, self.head_dim * 3)
+            .permute(0, 2, 3, 1)
+            .split([self.head_dim, self.head_dim, self.head_dim], dim=2)
+        )
+        attn = (q.transpose(-2, -1) @ k) * (self.head_dim**-0.5)
+        attn = attn.softmax(dim=-1)
+        x = v @ attn.transpose(-2, -1)
+        x = x.permute(0, 3, 1, 2)
+        v = v.permute(0, 3, 1, 2)
 
         if self.area > 1:
             x = x.reshape(B // self.area, N * self.area, C)
+            v = v.reshape(B // self.area, N * self.area, C)
             B, N, _ = x.shape
-        x = x.reshape(B, H, W, C).permute(0, 3, 1, 2)
 
-        return self.proj(x + pp)
-    
+        x = x.reshape(B, H, W, C).permute(0, 3, 1, 2).contiguous()
+        v = v.reshape(B, H, W, C).permute(0, 3, 1, 2).contiguous()
+
+        x = x + self.pe(v)
+        return self.proj(x)
+
+
 
 class ABlock(nn.Module):
     """
@@ -1305,8 +1305,13 @@ class ABlock(nn.Module):
 
         self.apply(self._init_weights)
 
-    def _init_weights(self, m):
-        """Initialize weights using a truncated normal distribution."""
+    @staticmethod
+    def _init_weights(m: nn.Module):
+        """Initialize weights using a truncated normal distribution.
+
+        Args:
+            m (nn.Module): Module to initialize.
+        """
         if isinstance(m, nn.Conv2d):
             nn.init.trunc_normal_(m.weight, std=0.02)
             if m.bias is not None:
@@ -1319,61 +1324,86 @@ class ABlock(nn.Module):
         return x
 
 
-class A2C2f(nn.Module):  
-    """
-    A2C2f module with residual enhanced feature extraction using ABlock blocks with area-attention. Also known as R-ELAN
+class A2C2f(nn.Module):
+    """Area-Attention C2f module for enhanced feature extraction with area-based attention mechanisms.
 
-    This class extends the C2f module by incorporating ABlock blocks for fast attention mechanisms and feature extraction.
+    This module extends the C2f architecture by incorporating area-attention and ABlock layers for improved feature
+    processing. It supports both area-attention and standard convolution modes.
 
     Attributes:
-        c1 (int): Number of input channels;
-        c2 (int): Number of output channels;
-        n (int, optional): Number of 2xABlock modules to stack. Defaults to 1;
-        a2 (bool, optional): Whether use area-attention. Defaults to True;
-        area (int, optional): Number of areas the feature map is divided. Defaults to 1;
-        residual (bool, optional): Whether use the residual (with layer scale). Defaults to False;
-        mlp_ratio (float, optional): MLP expansion ratio (or MLP hidden dimension ratio). Defaults to 1.2;
-        e (float, optional): Expansion ratio for R-ELAN modules. Defaults to 0.5;
-        g (int, optional): Number of groups for grouped convolution. Defaults to 1;
-        shortcut (bool, optional): Whether to use shortcut connection. Defaults to True;
+        cv1 (Conv): Initial 1x1 convolution layer that reduces input channels to hidden channels.
+        cv2 (Conv): Final 1x1 convolution layer that processes concatenated features.
+        gamma (nn.Parameter | None): Learnable parameter for residual scaling when using area attention.
+        m (nn.ModuleList): List of either ABlock or C3k modules for feature processing.
 
     Methods:
-        forward: Performs a forward pass through the A2C2f module.
+        forward: Processes input through area-attention or standard convolution pathway.
 
     Examples:
-        >>> import torch
-        >>> from ultralytics.nn.modules import A2C2f
-        >>> model = A2C2f(c1=64, c2=64, n=2, a2=True, area=4, residual=True, e=0.5)
-        >>> x = torch.randn(2, 64, 128, 128)
-        >>> output = model(x)
+        >>> m = A2C2f(512, 512, n=1, a2=True, area=1)
+        >>> x = torch.randn(1, 512, 32, 32)
+        >>> output = m(x)
         >>> print(output.shape)
+        torch.Size([1, 512, 32, 32])
     """
 
-    def __init__(self, c1, c2, n=1, a2=True, area=1, residual=False, mlp_ratio=2.0, e=0.5, g=1, shortcut=True):
+    def __init__(
+        self,
+        c1: int,
+        c2: int,
+        n: int = 1,
+        a2: bool = True,
+        area: int = 1,
+        residual: bool = False,
+        mlp_ratio: float = 2.0,
+        e: float = 0.5,
+        g: int = 1,
+        shortcut: bool = True,
+    ):
+        """Initialize Area-Attention C2f module.
+
+        Args:
+            c1 (int): Number of input channels.
+            c2 (int): Number of output channels.
+            n (int): Number of ABlock or C3k modules to stack.
+            a2 (bool): Whether to use area attention blocks. If False, uses C3k blocks instead.
+            area (int): Number of areas the feature map is divided.
+            residual (bool): Whether to use residual connections with learnable gamma parameter.
+            mlp_ratio (float): Expansion ratio for MLP hidden dimension.
+            e (float): Channel expansion ratio for hidden channels.
+            g (int): Number of groups for grouped convolutions.
+            shortcut (bool): Whether to use shortcut connections in C3k blocks.
+        """
         super().__init__()
         c_ = int(c2 * e)  # hidden channels
-        assert c_ % 32 == 0, "Dimension of ABlock be a multiple of 32."
-
-        # num_heads = c_ // 64 if c_ // 64 >= 2 else c_ // 32
-        num_heads = c_ // 32
+        assert c_ % 32 == 0, "Dimension of ABlock must be a multiple of 32."
 
         self.cv1 = Conv(c1, c_, 1, 1)
-        self.cv2 = Conv((1 + n) * c_, c2, 1)  # optional act=FReLU(c2)
+        self.cv2 = Conv((1 + n) * c_, c2, 1)
 
-        init_values = 0.01  # or smaller
-        self.gamma = nn.Parameter(init_values * torch.ones((c2)), requires_grad=True) if a2 and residual else None
-
+        self.gamma = nn.Parameter(0.01 * torch.ones(c2), requires_grad=True) if a2 and residual else None
         self.m = nn.ModuleList(
-            nn.Sequential(*(ABlock(c_, num_heads, mlp_ratio, area) for _ in range(2))) if a2 else C3k(c_, c_, 2, shortcut, g) for _ in range(n)
+            nn.Sequential(*(ABlock(c_, c_ // 32, mlp_ratio, area) for _ in range(2)))
+            if a2
+            else C3k(c_, c_, 2, shortcut, g)
+            for _ in range(n)
         )
 
-    def forward(self, x):
-        """Forward pass through R-ELAN layer."""
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Forward pass through A2C2f layer.
+
+        Args:
+            x (torch.Tensor): Input tensor.
+
+        Returns:
+            (torch.Tensor): Output tensor after processing.
+        """
         y = [self.cv1(x)]
         y.extend(m(y[-1]) for m in self.m)
+        y = self.cv2(torch.cat(y, 1))
         if self.gamma is not None:
-            return x + self.gamma.view(1, -1, 1, 1) * self.cv2(torch.cat(y, 1))
-        return self.cv2(torch.cat(y, 1))
+            return x + self.gamma.view(-1, self.gamma.shape[0], 1, 1) * y
+        return y
 
 class DSBottleneck(nn.Module):
     """
@@ -1852,7 +1882,7 @@ class HyperACE(nn.Module):
         self.fuse = FuseModule(c1, channel_adjust)
         self.branch1 = C3AH(self.c, self.c, e2, num_hyperedges, context)
         self.branch2 = C3AH(self.c, self.c, e2, num_hyperedges, context)
-                    
+
     def forward(self, X):
         x = self.fuse(X) #3个输入在这里被融合
         y = list(self.cv1(x).chunk(3, 1))
@@ -1921,5 +1951,31 @@ class FullPAD_Tunnel(nn.Module):
         super().__init__()
         self.gate = nn.Parameter(torch.tensor(0.0))
     def forward(self, x):
+        #print(x[0].shape, x[1].shape)
         out = x[0] + self.gate * x[1]
         return out
+
+
+class FuseModule2(FuseModule):
+    def __init__(self, c_in):
+        super().__init__(c_in, True)
+        self.downsample = nn.AvgPool2d(kernel_size=2)
+        self.upsample = nn.Upsample(scale_factor=2, mode='nearest')
+        #以中间通道为基准，0.5+1+2=3.5
+        self.conv_out = Conv(int(3.5*c_in), c_in, 1)
+
+class HyperACE2(HyperACE):
+    def __init__(self, c1, c2, n=1, num_hyperedges=8, dsc3k=True, shortcut=False, e1=0.5, e2=1, context="both"):
+        super().__init__(c1, c2, n, num_hyperedges, dsc3k, shortcut, e1, e2)
+        self.c = int(c2 * e1)
+        self.cv1 = Conv(c1, 3 * self.c, 1, 1)
+        self.cv2 = Conv((4 + n) * self.c, c2, 1)
+        self.m = nn.ModuleList(
+            DSC3k(self.c, self.c, 2, shortcut, k1=3, k2=7) if dsc3k
+            else DSBottleneck(self.c, self.c, shortcut=shortcut)
+            for _ in range(n)
+        )
+        self.fuse = FuseModule2(c1)
+        self.branch1 = C3AH(self.c, self.c, e2, num_hyperedges, context)
+        self.branch2 = C3AH(self.c, self.c, e2, num_hyperedges, context)
+

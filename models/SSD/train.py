@@ -65,12 +65,12 @@ def train(**kwargs):
         'epochs':20,
         'lr':1e-3,
         'lf':1e-2,
-        'batch_size':8,
+        'batch':8,
         'num_workers':8,
         'weight_decay':1e-5,
         'patience':5,
         'device': 'cuda' if torch.cuda.is_available() else 'cpu',
-        'warmup_epochs': 0,
+        'warmup': 0,
     }
     cfg.update(kwargs)
 
@@ -99,7 +99,7 @@ if __name__ == '__main__':
         patience=10,
         lr=1e-3,
         warmup_epochs=1,
-        batch_size=8,
+        batch=8,
         num_workers=4
     )
 
