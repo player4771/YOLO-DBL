@@ -8,7 +8,6 @@ from .SAPA import SAPA
 from .SFAU import SFAU
 
 from .CARAFEplusplus import CARAFEplusplus
-from .CoordAttention import CoordAtt
 from .DLU import DLUPack
 from .DySample import DySample
 from .EMCAD_decoders import EUCB
@@ -20,5 +19,5 @@ from .LDA_AQU import LDA_AQU
 from .MEUM import MEUM
 from .PCPE_YOLO_C2f_IG import C2f_PIG
 from .PCPE_YOLO_CAA import CAA
-from .YOLO_EMAC import C2f_ScConv, M2C2f, C3k2_EAMC
+from .YOLO_EMAC import M2C2f, C3k2_EAMC
 from .YOLO_RACE import CARAFE, ResBlock_CBAM

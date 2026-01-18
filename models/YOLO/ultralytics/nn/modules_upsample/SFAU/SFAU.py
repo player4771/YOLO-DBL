@@ -39,7 +39,7 @@ class DDNF(nn.Module):
         return x_out  # 返回最终输出
 
 class SFAU(nn.Module):
-    def __init__(self, y_channels, x_channels, embedding_dim=64, k_up=5, scale=4):
+    def __init__(self, y_channels, x_channels, embedding_dim=64, k_up=5, scale=2):
         super(SFAU, self).__init__()
         self.scale = scale
         self.k_up = k_up

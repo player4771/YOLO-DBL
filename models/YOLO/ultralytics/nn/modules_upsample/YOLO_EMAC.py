@@ -4,8 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from ..modules.conv import Conv
-from ..modules.block import Bottleneck, C2f, C3k
+from ultralytics.nn.modules import Conv, Bottleneck, C2f, C3, C3k
 
 
 class GroupBatchnorm2d(nn.Module):
@@ -131,23 +130,21 @@ class C2f_ScConv(C2f):
         super().__init__(c1, c2, n, shortcut, g, e)
         self.m = nn.ModuleList(Bottleneck_ScConv(self.c, self.c, shortcut, g, k=(3, 3), e=1.0) for _ in range(n))
 
-def C3k_ScConv(*args, **kwargs):
-    """不知为何，此类/函数在YOLO-EMAC的代码中没有声明\n
-    此方法在其余代码中出现，但并未真正使用"""
-    pass
+class C3k_ScConv(C3):
+    def __init__(self, c1, c2, n=1, shortcut=True, g=1, e=0.5, k=3):
+        super().__init__(c1, c2, n, shortcut, g, e)
+        c_ = int(c2 * e)  # hidden channels
+        self.m = nn.Sequential(*(Bottleneck_ScConv(c_, c_, shortcut, g, k=(k, k), e=1.0) for _ in range(n)))
 
 class C3k2_ScConv(C2f):
     """
     C3k2 模块与 ScConv 结合版本。
     使用 ScConv 替代 Bottleneck 结构，实现结构信息和通道感知增强。
     """
-    def __init__(self, c1, c2, n=1, use_c3k=False, e=0.5, g=1, shortcut=True,
-                 group_num=16, gate_treshold=0.5,
-                 alpha=0.5, squeeze_radio=2, group_size=2, group_kernel_size=3):
+    def __init__(self, c1, c2, n=1, use_c3k=False, e=0.5, g=1, shortcut=True, group_num=16):
         super().__init__(c1, c2, n, shortcut, g, e)
         self.m = nn.ModuleList(
-            C3k_ScConv(self.c, self.c, 2, shortcut, g, e, group_num, gate_treshold,
-                       alpha, squeeze_radio, group_size, group_kernel_size)
+            C3k_ScConv(self.c, self.c, 2, shortcut, g, e, group_num)
             if use_c3k else
             Bottleneck_ScConv(self.c, self.c, shortcut, g, k=(3, 3), e=1.0)
             for _ in range(n)

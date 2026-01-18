@@ -63,7 +63,9 @@ from .block import (
     FullPAD_Tunnel,
     DSC3k2,
 
-    HyperACE2, DSBottleneck,
+    C3k,
+    HyperACE2,
+    DSBottleneck,
 )
 from .conv import (
     CBAM,
@@ -81,6 +83,8 @@ from .conv import (
     LightConv,
     RepConv,
     SpatialAttention,
+
+    autopad,
 )
 from .head import OBB, Classify, Detect, Pose, RTDETRDecoder, Segment, WorldDetect, v10Detect
 from .transformer import (
@@ -175,6 +179,8 @@ __all__ = (
     "DSC3k2",
     "DSConv",
 
+    "C3k",
+    "autopad",
     "HyperACE2",
     "DSBottleneck",
 )

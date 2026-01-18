@@ -4,89 +4,64 @@ import torch.nn.functional as F
 from mmengine.model import xavier_init, normal_init
 
 
-def carafe(features, masks, kernel_size, up_factor):
-    """
-    使用 unfold + matmul 的逻辑来实现特征重组。
-    Args:
-        features (Tensor): 低分辨率输入特征图, (N, C, H, W)
-        masks (Tensor): 预测的上采样核, (N, k*k, H_out, W_out)
-        kernel_size (int): 重组核的大小 (k)
-        up_factor (int): 上采样倍率 (σ)
+class CARAFE(nn.Module):
+    def __init__(self, kernel_size:int, group_size:int, scale_factor:int):
+        super(CARAFE, self).__init__()
+        self.kernel_size = kernel_size
+        self.group_size = group_size
+        self.scale_factor = scale_factor
+        self.padding = (kernel_size - 1) // 2
 
-    Returns:
-        Tensor: 高分辨率输出特征图
-    """
-    N, C, H, W = features.size()
+    def forward(self, features, masks):
+        """
+        Args:
+            features: (N, C, H, W)
+            masks: (N, Group * Kernel^2, H_up, W_up)
+        """
+        N, C, H, W = features.shape
+        kernel_size = self.kernel_size
+        group_size = self.group_size
+        scale = self.scale_factor
 
-    # --- 1. 准备上采样核 (masks) ---
-    # 将 masks 变形以适应 matmul
-    kernel_tensor = masks.unfold(2, up_factor, step=up_factor)
-    kernel_tensor = kernel_tensor.unfold(3, up_factor, step=up_factor)
-    kernel_tensor = kernel_tensor.reshape(N, kernel_size ** 2, H, W, up_factor ** 2)
-    kernel_tensor = kernel_tensor.permute(0, 2, 3, 1, 4)  # 最终形状: (N, H, W, k*k, σ*σ)
+        # 1. Unfold: 提取滑动窗口特征
+        # Output: (N, C * K*K, H * W)
+        unfolded_feat = F.unfold(features, kernel_size=kernel_size, padding=self.padding)
+        # Reshape: (N, C, K*K, H, W)
+        unfolded_feat = unfolded_feat.view(N, C, kernel_size * kernel_size, H, W)
 
-    # --- 2. 准备输入特征 (features) ---
-    x = F.pad(features, pad=(kernel_size // 2, kernel_size // 2, kernel_size // 2, kernel_size // 2),
-              mode='constant', value=0)
-    x = x.unfold(2, kernel_size, step=1)
-    x = x.unfold(3, kernel_size, step=1)
-    x = x.reshape(N, C, H, W, -1)
-    x = x.permute(0, 2, 3, 1, 4)  # 最终形状: (N, H, W, C, k*k)
+        # 2. Upsample: 将特征邻域扩展到输出分辨率
+        # CARAFE 的定义是：输出点 (x', y') 对应输入点 (x'/s, y'/s) 的邻域
+        # 因此，对于每个 s*s 的输出块，它们共享同一个输入中心的邻域特征
+        # 使用 repeat_interleave 实现最近邻上采样
+        # (N, C, K*K, H, W) -> (N, C, K*K, H*scale, W*scale)
+        unfolded_feat = unfolded_feat.repeat_interleave(scale, dim=-2).repeat_interleave(scale, dim=-1)
 
-    # --- 3. 执行特征重组 ---
-    # (N, H, W, C, k*k) @ (N, H, W, k*k, σ*σ) -> (N, H, W, C, σ*σ)
-    out_tensor = torch.matmul(x, kernel_tensor)
+        # 3. Apply Mask: 加权求和
+        # Mask shape: (N, Group * K^2, H_up, W_up)
+        # Feature shape: (N, C, K^2, H_up, W_up)
 
-    # --- 4. 将输出重组为图像格式 ---
-    out_tensor = out_tensor.reshape(N, H, W, -1)
-    out_tensor = out_tensor.permute(0, 3, 1, 2)
-    out_tensor = F.pixel_shuffle(out_tensor, up_factor)
+        if group_size == 1:
+            # 常见情况 G=1，Mask 直接广播到所有通道
+            # Mask: (N, 1, K^2, H_up, W_up)
+            masks = masks.unsqueeze(1)
+            # 逐元素相乘并在 K^2 维度求和
+            output = (unfolded_feat * masks).sum(dim=2)
+        else:
+            # G > 1，通道分组处理
+            assert C % group_size == 0
+            C_per_group = C // group_size
 
-    return out_tensor
+            # Reshape 特征以匹配分组: (N, G, C_sub, K^2, H_up, W_up)
+            feat_view = unfolded_feat.view(N, group_size, C_per_group, kernel_size * kernel_size, H * scale, W * scale)
+            # Reshape 掩码: (N, G, 1, K^2, H_up, W_up)
+            mask_view = masks.view(N, group_size, 1, kernel_size * kernel_size, H * scale, W * scale)
 
-def carafe2(features, masks, kernel_size, group_size, up_factor):
-    """
-    将 group_size 参数添加回 unfold + matmul 实现中。
-    group_size (分组数) 的作用是将输入特征图的通道 (Channels) 分成若干个独立的组，然后为每一组分别进行内容感知的特征重组。
-    """
-    N, C, H, W = features.size()
+            # 组内加权求和: (N, G, C_sub, H_up, W_up)
+            output = (feat_view * mask_view).sum(dim=3)
+            # 展平回原始通道: (N, C, H_up, W_up)
+            output = output.view(N, C, H * scale, W * scale)
 
-    # 检查通道数是否能被分组整除
-    assert C % group_size == 0, f'输入通道数 {C} 必须能被分组数 {group_size} 整除'
-    C_g = C // group_size  # 每个组的通道数
-
-    # --- 1. 准备上采样核 (masks) ---
-    # masks 的输入形状假定为 (N, G * k*k, H_out, W_out), 将其 reshape 以便后续处理
-    masks = masks.view(N, group_size, kernel_size ** 2, H * up_factor, W * up_factor)
-
-    kernel_tensor = masks.unfold(3, up_factor, step=up_factor)  # 在 H_out 维度上 unfold
-    kernel_tensor = kernel_tensor.unfold(4, up_factor, step=up_factor)  # 在 W_out 维度上 unfold
-    # -> (N, G, k*k, H, W, σ, σ)
-    kernel_tensor = kernel_tensor.reshape(N, group_size, kernel_size ** 2, H, W, up_factor ** 2)
-    # -> (N, G, H, W, k*k, σ*σ)
-    kernel_tensor = kernel_tensor.permute(0, 1, 3, 4, 2, 5)
-
-    # --- 2. 准备输入特征 (features) ---
-    features = features.view(N, group_size, C_g, H, W)# 将 features 分组
-
-    x = F.pad(features, (kernel_size//2,kernel_size//2,kernel_size//2,kernel_size//2), 'constant', 0)
-    x = x.unfold(3, kernel_size, step=1)  # 在 H 维度上 unfold
-    x = x.unfold(4, kernel_size, step=1)  # 在 W 维度上 unfold
-    # -> (N, G, Cg, H, W, k, k)
-    x = x.reshape(N, group_size, C_g, H, W, -1)
-    # -> (N, G, H, W, Cg, k*k)
-    x = x.permute(0, 1, 3, 4, 2, 5)
-
-    # --- 3. 执行特征重组 ---
-    # (N, G, H, W, Cg, k*k) @ (N, G, H, W, k*k, σ*σ) -> (N, G, H, W, Cg, σ*σ)
-    out_tensor = torch.matmul(x, kernel_tensor)
-
-    # --- 4. 将输出重组为图像格式 ---
-    # (N, G, H, W, Cg, σ*σ) -> (N, G, Cg, σ*σ, H, W) -> (N, C, H, W, σ*σ) -> (N, C, H, up_factor, W, up_factor)
-    out_tensor = out_tensor.permute(0, 1, 4, 2, 3, 5).reshape(N, C*up_factor**2, H, W)
-    out_tensor = F.pixel_shuffle(out_tensor, up_factor)
-
-    return out_tensor
+        return output
 
 class DLUPack(nn.Module):
     """
@@ -114,12 +89,10 @@ class DLUPack(nn.Module):
         super(DLUPack, self).__init__()
         self.channels = channels
         self.scale_factor = scale_factor
-        # k_up. 对于需要更大感受野的任务可以增大以提高精度，但计算成本也会增加
         self.up_kernel = up_kernel
         self.up_group = up_group
         self.encoder_kernel = encoder_kernel
         self.encoder_dilation = encoder_dilation
-        # 64时精度最高，降低该值(如32)可以显著减少后续卷积层的计算量和参数量从而提升性能，但会带来轻微的精度损失
         self.compressed_channels = compressed_channels
         self.channel_compressor = nn.Conv2d(channels, self.compressed_channels, 1)
         self.kernel_space_generator = nn.Conv2d(
@@ -137,6 +110,7 @@ class DLUPack(nn.Module):
             dilation=self.encoder_dilation,
             bias=True)
         self.init_weights()
+        self.carafe = CARAFE(self.up_kernel, self.up_group, self.scale_factor)
 
     def init_weights(self):
         for m in self.modules():
@@ -159,28 +133,25 @@ class DLUPack(nn.Module):
         return mask
 
     def kernel_space_expander(self, offset, mask):
-        device = offset.device
         n, _, h, w = offset.size()
         offset = F.pixel_shuffle(offset, self.scale_factor)
         offset = offset.permute(0,2,3,1)
         offset[:,:,:,0] = offset[:,:,:,0] * 1/(w-1)*2
         offset[:,:,:,1] = offset[:,:,:,1] * 1/(h-1)*2
 
-        new_h = torch.repeat_interleave(torch.linspace(-1, 1, h, device=device),self.scale_factor)
-        new_h = new_h.view(-1, 1).repeat(1, self.scale_factor*w) #一整行太长，拆分了一下
-        new_w = torch.repeat_interleave(torch.linspace(-1, 1, w, device=device),self.scale_factor)
-        new_w = new_w.repeat(self.scale_factor*h, 1)
+        new_h = torch.repeat_interleave(torch.linspace(-1, 1, h),self.scale_factor).view(-1, 1).repeat(1, self.scale_factor*w)
+        new_w = torch.repeat_interleave(torch.linspace(-1, 1, w),self.scale_factor).repeat(self.scale_factor*h, 1)
 
         grid = torch.cat((new_w.unsqueeze(2), new_h.unsqueeze(2)), dim=2)
         grid = grid.unsqueeze(0)
         grid_ = grid.expand(n,-1,-1,-1)
+        grid_ = grid_.to(offset)
         offset = grid_ + offset
         mask_ = F.grid_sample(mask, offset,padding_mode='border',align_corners=True)
         return mask_
 
     def feature_reassemble(self, x, mask):
-        #x = carafe(x, mask, self.up_kernel, self.scale_factor)
-        x = carafe2(x, mask, self.up_kernel, self.up_group, self.scale_factor)
+        x = self.carafe(x, mask)
         return x
 
     def forward(self, x):

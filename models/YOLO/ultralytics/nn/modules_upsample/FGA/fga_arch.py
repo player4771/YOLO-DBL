@@ -264,7 +264,7 @@ class FGA(nn.Module):
                  dim=64,
                  back_embed_dim=None,
                  out_dim=None,
-                 upscale=4,
+                 upscale=2,
                  dropout=0.,
                  # attention args
                  window_size=1,

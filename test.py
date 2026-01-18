@@ -21,8 +21,8 @@ def upsample_test(in_channels:int=64, size:int=64):
         MEUM(in_channels): x,
         CARAFEPack(in_channels): x,
         SAPA(in_channels): (y, x),
-        FGA(64, upscale=2): None,
-        SFAU(in_channels, in_channels, scale=2): None,
+        FGA(in_channels): None,
+        SFAU(in_channels, in_channels): None,
         torch.compile(AnyUpPack(in_channels)): None,
         torch.compile(FADE_H2L(in_channels, in_channels)): None,
         torch.compile(FADE_L2H(in_channels, in_channels)): None,
@@ -78,4 +78,4 @@ def attention_test(in_channels:int=64, size:int=256):
             check_time(module.to('cuda'), input)
 
 if __name__ == '__main__':
-    attention_test()
+    upsample_test()

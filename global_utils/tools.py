@@ -15,6 +15,8 @@ __all__ = (
     'avg_time',
     'check_time',
     'rand_rgb',
+    'get_num_files',
+    'time_sync',
 )
 
 def get_dataloader(cfg:dict, dataset, transform, is_train:bool, collate_fn): # -> dataloader
@@ -119,3 +121,27 @@ def check_time(module, *args, repeat=10, log=True, adjust=25):
 
 def rand_rgb():
     return randint(0, 256), randint(0, 256), randint(0, 256)
+
+def num_sort_fn(file:str) -> list:
+    """将文件的整个路径按以下规则排序：\n
+    1. 对于非数字部分，逐位按字母顺序排序；\n
+    2. 若某一位为数字，将从这一位开始所有连续的数字作为一个整体，按整体数字的大小排序。\n
+    如:E:/test11/aaa4514.txt会被切分为：E:/test, (数字)11, /aaa, (数字)4514, .txt"""
+    return [int(c) if c.isdigit() else c for c in re.split(r'(\d+)', file)]
+
+def get_num_files(file:str|Path) -> list[str]:
+    """给定一个不带序号的文件路径，寻找同目录下所有带有序号的文件路径\n
+    如给定C:/a.txt，寻找C:/a0.txt, C:/a1.txt等\n
+    返回的列表保证按照后缀序号的数字大小(非字母序)升序排序"""
+    file = Path(file)
+    pattern = re.compile(rf".*{re.escape(file.stem)}(\d*){re.escape(file.suffix)}$")  # \d*而不是\d+是为了包含file本身
+    files = [str(path) for path in file.parent.iterdir() if path.is_file()]  #Path->str
+    files = [file for file in files if pattern.match(file)]
+    files = sorted(files, key=num_sort_fn)
+    return files
+
+def time_sync(device=None):
+    """Returns time(float) with cuda synchronized"""
+    if torch.cuda.is_available():
+        torch.cuda.synchronize(device)
+    return time.perf_counter()

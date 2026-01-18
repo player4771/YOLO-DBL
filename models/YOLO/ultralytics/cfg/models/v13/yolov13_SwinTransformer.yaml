@@ -1,0 +1,52 @@
+nc: 80
+scales:
+  # [depth, width, max_channels]
+  n: [0.50, 0.25, 1024] # Nano
+  s: [0.50, 0.50, 1024] # Small
+  l: [1.00, 1.00, 512]  # Large
+  x: [1.00, 1.50, 512]  # Extra Large
+
+backbone: #SwinTiny中Dim/Heads=32
+  # [from, repeats, module, args]
+  - [-1, 1, Conv, [64, 3, 2]] # 0
+  - [-1, 1, PatchEmbed, [128, 4]]
+  - [-1, 1, SwinStage, [128, 2, 4, 7]]
+  - [-1, 1, PatchMerging, [256]]
+  - [-1, 1, SwinStage, [256, 2, 8, 7]]  # --F0--
+  - [-1, 1, Conv, [512, 1, 1]]
+  - [-2, 1, PatchMerging, [512]]
+  - [-1, 1, SwinStage, [512, 6, 16, 7]] # --F1--
+  - [-1, 1, PatchMerging, [1024]]
+  - [-1, 1, SwinStage, [1024, 2, 32, 7]] # 9 --F2--
+
+head:
+  - [[-5, -3, -1], 2, HyperACE, [512, 8, True, True, 0.5, 1, "both"]] # 10
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [-2, 1, DownsampleConv, []]
+
+  - [[-6, -3], 1, FullPAD_Tunnel, []] # 13
+  - [[-9, -3], 1, FullPAD_Tunnel, []]
+  - [[-6, -3], 1, FullPAD_Tunnel, []]
+  
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]] # 16
+  - [[-1, -4], 1, Concat, [1]]
+  - [-1, 2, DSC3k2, [512, True]]
+  - [[-1, 10], 1, FullPAD_Tunnel, []]
+
+  - [-2, 1, nn.Upsample, [None, 2, "nearest"]] # 20
+  - [[-1, 14], 1, Concat, [1]]
+  - [-1, 2, DSC3k2, [256, True]]
+  - [11, 1, Conv, [256, 1, 1]]
+  - [[-2, -1], 1, FullPAD_Tunnel, []] #-> Detect
+
+  - [-1, 1, Conv, [256, 3, 2]] # 25
+  - [[-1, 19], 1, Concat, [1]]
+  - [-1, 2, DSC3k2, [512, True]]
+  - [[-1, 10], 1, FullPAD_Tunnel, []] #-> Detect
+
+  - [-2, 1, Conv, [512, 3, 2]] # 29
+  - [[-1, 15], 1, Concat, [1]]
+  - [-1, 2, DSC3k2, [1024, True]]
+  - [[-1, 12], 1, FullPAD_Tunnel, []] #-> Detect
+  
+  - [[-9, -5, -1], 1, Detect, [nc]] # Detect(P3, P4, P5)

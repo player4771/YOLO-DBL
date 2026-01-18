@@ -1,15 +1,18 @@
 import yaml
 import torch
 import torchvision
+from pathlib import Path
 
 torch.hub.set_dir('./') #修改缓存路径
 torch.backends.cudnn.benchmark=True
+torch.backends.cudnn.allow_tf32 = True
+torch.backends.cuda.matmul.allow_tf32 = True
 from torchvision.models.detection.anchor_utils import DefaultBoxGenerator
 
 from backbone import ResNetBackbone
-from global_utils import ATransforms, Trainer
+from global_utils import ATransforms, Trainer, default_val, default_detect
 
-def create_model(backbone:str='vgg16', num_classes:int=4): # -> model
+def create_model(backbone:str='vgg16', num_classes:int=4, weights:str=None): # -> model
     if backbone == "vgg16":
         model = torchvision.models.detection.ssd300_vgg16(weights='DEFAULT')
         # 替换分类头以匹配类别数
@@ -50,10 +53,10 @@ def create_model(backbone:str='vgg16', num_classes:int=4): # -> model
     else:
         raise "Invalid backbone, requires 'vgg16' or 'resnet50'."
 
-    return model
+    if weights:
+        model.load_state_dict(torch.load(weights))
 
-def collate_fn(batch):
-    return tuple(zip(*batch))
+    return model
 
 def train(**kwargs):
     cfg = { #default args
@@ -63,14 +66,15 @@ def train(**kwargs):
         'project':'./runs',
         'name':'train',
         'epochs':20,
-        'lr':1e-3,
+        'lr':1e-2,
         'lf':1e-2,
         'batch':8,
-        'num_workers':8,
+        'workers':8,
         'weight_decay':1e-5,
         'patience':5,
         'device': 'cuda' if torch.cuda.is_available() else 'cpu',
         'warmup': 0,
+        'img_size': 640,
     }
     cfg.update(kwargs)
 
@@ -82,24 +86,40 @@ def train(**kwargs):
 
     trainer = Trainer(
         model=model,
-        collate_fn=collate_fn,
-        transform_train=ATransforms(is_train=True, size=300),
-        transform_val=ATransforms(is_train=False, size=300),
+        transform_train=ATransforms(is_train=True, size=cfg['img_size']),
+        transform_val=ATransforms(is_train=False, size=cfg['img_size']),
         **cfg
     )
     trainer.start_training()
 
+def val():
+    input_dir = Path('./runs/train6')
+    model = create_model(weights=str(input_dir / 'best.pth'))
+    transform = ATransforms(is_train=False, size=640)
+    default_val(model, input_dir, transform)
+
+def detect():
+    model = create_model(weights='./runs/train6/best.pth')
+    transform = ATransforms(is_train=False, size=640)
+    default_detect(
+        model,
+        data="E:/Projects/Datasets/tea_leaf_diseases/data_abs.yaml",
+        input_="E:/Projects/Datasets/example/sample_v4_1.jpg",
+        project='./runs',
+        transform=transform,
+        conf_thres=0.5,
+    )
+
 
 if __name__ == '__main__':
     train(
-        backbone='resnet50',
+        backbone='vgg16',
         data="E:/Projects/Datasets/tea_leaf_diseases/data_abs.yaml",
         project="./runs",
         epochs=100,
         patience=10,
-        lr=1e-3,
-        warmup_epochs=1,
-        batch=8,
-        num_workers=4
+        lr=1e-2,
+        warmup=3,
+        batch=4,
+        workers=4
     )
-

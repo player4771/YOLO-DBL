@@ -1017,13 +1017,11 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             TransformerBlock,
 
             FEM,
-            EUCB,
             C2f_PIG,
             C3k2_EFE,
             SPDConv,
             CARAFE,
             ResBlock_CBAM,
-            C2f_ScConv,
             M2C2f,
             C3k2_EAMC,
             CPCA_YOLO,
@@ -1040,6 +1038,12 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             GhostBottleneckV3,
             MHSA_YOLO,
             DSBottleneck,
+            PatchEmbed,
+            SwinStage,
+            PatchMerging,
+            EffBlock,
+            RepConv,
+            FasterBlock,
         }:
             c1, c2 = ch[f], args[0]
             if c2 != nc:  # if c2 not equal to number of classes (i.e. for Classify() output)
@@ -1072,9 +1076,9 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
                 C2f_PIG,
                 C3k2_EFE,
                 SPDConv,
-                C2f_ScConv,
                 M2C2f,
                 C3k2_EAMC,
+                EffBlock,
             }:
                 args.insert(2, n)  # number of repeats
                 n = 1
@@ -1174,6 +1178,10 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             DeBiAttentionBlock,
             CoTNetLayer,
             TripletAttention,
+            PConv,
+            EUCB,
+            MEUM,
+            DLUPack,
         ):
             c1, c2 = ch[f], ch[f] #实际上yaml中的c1并没有被使用
             args = [c1, *args[1:]] #用c1替换args[0]是因为有缩放，二者未必相等

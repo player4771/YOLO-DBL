@@ -1,8 +1,10 @@
+
 import torch
-from PIL import Image
+import imagesize
 from pathlib import Path
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
+from torchvision.io import decode_image
 from torchvision.tv_tensors import BoundingBoxes
 
 from global_utils.tools import rand_rgb
@@ -34,12 +36,11 @@ class YOLODataset(torch.utils.data.Dataset):
         img_path = self.img_files[idx]
         label_path = self.label_files[img_path.stem]
 
-        image = Image.open(str(img_path)).convert('RGB')
-        w_raw, h_raw = image.size
+        image = decode_image(str(img_path))
+        _, w_raw, h_raw = image.shape #CHW
 
         # 读取 YOLO 标注
-        boxes = []
-        labels = []
+        boxes, labels = [], []
         with open(label_path, 'r') as f:
             for line in f:
                 parts = line.strip().split()
@@ -50,22 +51,20 @@ class YOLODataset(torch.utils.data.Dataset):
                 class_id, x_center, y_center, w, h = map(float, parts)
 
                 # 转换为VOC格式: [xmin, ymin, xmax, ymax]
-                x_min = (x_center - w / 2) * w
-                y_min = (y_center - h / 2) * h
-                x_max = (x_center + w / 2) * w
-                y_max = (y_center + h / 2) * h
+                x_min = (x_center - w / 2) * w_raw
+                y_min = (y_center - h / 2) * h_raw
+                x_max = (x_center + w / 2) * w_raw
+                y_max = (y_center + h / 2) * h_raw
 
                 boxes.append([x_min, y_min, x_max, y_max])
-                # 注意：YOLO类别索引从0开始，SSD的有效类别从1开始（0是背景），所以要+1
-                labels.append(int(class_id) + 1)
+                labels.append(int(class_id) + 1) #YOLO类别索引从0开始，SSD的有效类别从1开始(0是背景)，所以要+1
 
-        w_new, h_new = w_raw, h_raw
-        if self.transform:
-            transformed = self.transform(image, bboxes=boxes, class_labels=labels)
-            image = transformed['image']
-            boxes = transformed['bboxes']
-            labels = transformed['class_labels']
-            _, h_new, w_new = image.shape #通道顺序会发生变化，详见transforms.py
+        if self.transform: #transform里有标准化，故读取时不进行处理(uint8省空间)
+            T = self.transform(image, bboxes=boxes, class_labels=labels) #通道顺序会发生变化，详见transforms.py
+            image, boxes, labels = T['image'], T['bboxes'], T['class_labels']
+        else:
+            image = image.float()/255.0
+        _, h_new, w_new = image.shape if self.transform else None, w_raw, h_raw
 
         if boxes:# 转换为 Tensor
             boxes = torch.as_tensor(boxes, dtype=torch.float32)
@@ -94,27 +93,25 @@ class YOLODataset(torch.utils.data.Dataset):
         label_path = self.label_files[img_path.stem]
 
         boxes, labels = [], []
-        if label_path.exists():
-            with open(label_path, 'r') as f:
-                for line in f:
-                    parts = line.strip().split()
-                    if len(parts) != 5:
-                        raise ValueError(f"Invalid label format in {label_path}, got {len(parts)}/5 parts")
-                    class_id, x_c, y_c, w, h = map(float, parts)
+        with open(label_path, 'r') as f:
+            for line in f:
+                parts = line.strip().split()
+                if len(parts) != 5:
+                    raise ValueError(f"Invalid label format in {label_path}, got {len(parts)}/5 parts")
+                class_id, x_c, y_c, w, h = map(float, parts)
 
-                    if self.transform is not None: #这里是为了让box的分辨率与resize图像匹配
-                        w, h = self.transform.resize_w, self.transform.resize_h
-                    else:
-                        with Image.open(img_path) as img:
-                            w, h = img.size
+                if self.transform is not None: #这里是为了让box的分辨率与resize图像匹配
+                    w_new, h_new = self.transform.resize_w, self.transform.resize_h
+                else:
+                    w_new, h_new = imagesize.get(img_path)
 
-                    x_min = (x_c - w / 2) * w
-                    y_min = (y_c - h / 2) * h
-                    x_max = (x_c + w / 2) * w
-                    y_max = (y_c + h / 2) * h
+                x_min = (x_c - w / 2) * w_new
+                y_min = (y_c - h / 2) * h_new
+                x_max = (x_c + w / 2) * w_new
+                y_max = (y_c + h / 2) * h_new
 
-                    boxes.append([x_min, y_min, x_max, y_max])
-                    labels.append(int(class_id) + 1)
+                boxes.append([x_min, y_min, x_max, y_max])
+                labels.append(int(class_id) + 1)
 
         if boxes:
             boxes = torch.as_tensor(boxes, dtype=torch.float32)

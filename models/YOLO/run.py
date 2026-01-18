@@ -1,10 +1,11 @@
 # https://github.com/iMoonLab/yolov13
 # https://docs.ultralytics.com/zh/modes/train/#augmentation-settings-and-hyperparameters
+import torch.nn
 
 from ultralytics import YOLO
 from global_utils import WindowsRouser
 
-import sys
+#import sys
 #sys.path.append('/root/project/Paper2/')
 #sys.path.append(r"E:\Projects\PyCharm\YOLO\yolov3")
 
@@ -39,12 +40,12 @@ def train(model:str, data:str):
         mosaic=1.0,
         mixup=0.05,  # S:0.05; L:0.15; X:0.2
         copy_paste=0.15,  # S:0.15; L:0.5; X:0.6
-        #erasing=0.9,
+        #erasing=0.2,
 
         #loss函数权重
-        box=8.5,
-        cls=0.5,
-        dfl=1.5,
+        #box=8.5,
+        #cls=0.5,
+        #dfl=1.5,
     )
 
     rouser.stop()
@@ -52,8 +53,8 @@ def train(model:str, data:str):
 
 if __name__ == '__main__':
     data_yaml = "E:/Projects/Datasets/tea_leaf_diseases/data.yaml"
-    model_yaml = r"yolov13s.yaml"
+    model_file = r"yolov13s_edit10.yaml"
 
-    #model, _ = train(model_yaml, data_yaml)
-    YOLO(model_yaml).val(data=data_yaml)
-    #YOLO(model_yaml).info(detailed=False)
+    model, _ = train(model_file, data_yaml)
+    #YOLO(model_file).val(data=data_yaml)
+    #YOLO(model_file).info(detailed=False)

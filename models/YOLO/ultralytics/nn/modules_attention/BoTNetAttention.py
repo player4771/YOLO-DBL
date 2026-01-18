@@ -53,7 +53,7 @@ class AbsPosEmb(nn.Module):
         self.width = nn.Parameter(torch.randn(width, dim_head) * scale)
 
     def forward(self, q):
-        emb = rearrange(self.height, 'h d -> h () d') + rearrange(self.width, 'w d -> () w d')
+        emb = rearrange(self.height.to(q), 'h d -> h () d') + rearrange(self.width.to(q), 'w d -> () w d')
         emb = rearrange(emb, ' h w d -> (h w) d')
         logits = einsum('b h i d, j d -> b h i j', q, emb)
         return logits

@@ -350,14 +350,13 @@ class RepGhostNet(nn.Module):
 
         # building inverted residual blocks
         stages = []
-        block = RepGhostBottleneck
         for cfg in self.cfgs:
             layers = []
             for k, exp_size, c, se_ratio, s in cfg:
                 output_channel = _make_divisible(c * width, 4)
                 hidden_channel = _make_divisible(exp_size * width, 4)
                 layers.append(
-                    block(
+                    RepGhostBottleneck(
                         input_channel,
                         hidden_channel,
                         output_channel,
@@ -511,11 +510,3 @@ if __name__ == "__main__":
     input = torch.randn(1, 3, 224, 224)
     # y = model(input)
     # print(y.size())
-
-    import sys
-
-    sys.path.append("../")
-    from tools import cal_flops_params
-
-    flops, params = cal_flops_params(model, input_size=input.shape)
-
