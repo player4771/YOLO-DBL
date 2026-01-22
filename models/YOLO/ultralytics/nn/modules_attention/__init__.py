@@ -3,7 +3,7 @@ from .BiFormer import BiFormer, biformer, nchwBRA as BiFormerNCHW
 from .DAT import DAT, ShiftWindowAttention, DAttentionBaseline, FusedKQnA, DAT_YOLO
 from .SLA import SparseLinearAttention, SLA
 
-from .AIFIAttention import AIFI
+#from .AIFIAttention import AIFI
 from .ASFF import ASFF
 from .AxialNet import AxialBlock, AxialBlock_dynamic, AxialBlock_wopos, AxialBlock_YOLO
 from .BAM import BAM, BAM_YOLO
@@ -25,7 +25,7 @@ from .MLCA import MLCA
 from .NonLocal import NLBlockND, NonLocalBlock2D
 from .SE import SELayer
 from .SimAM import SimAM
-from .SwinTransformer import SwinTransformer
+from .Swin_Transformer import SwinTransformer
 from .TripletAttention import TripletAttention
 from .VOLO import Outlooker_YOLO
 from .YOLO_ELA import ELA

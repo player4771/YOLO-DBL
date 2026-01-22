@@ -1020,7 +1020,6 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             C2f_PIG,
             C3k2_EFE,
             SPDConv,
-            CARAFE,
             ResBlock_CBAM,
             M2C2f,
             C3k2_EAMC,
@@ -1084,8 +1083,8 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
                 n = 1
             if m in {C3k2, DSC3k2}:  # for P/U sizes
                 legacy = False
-                if scale in "lx":
-                    args[3] = True
+                #if scale in "lx":
+                    #args[3] = True
             if m is A2C2f: 
                 legacy = False
                 if scale in "lx":  # for L/X sizes
@@ -1131,17 +1130,17 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
                 he = int(args[1] * 1.5)
             args = [c1, c2, n, he, *args[2:]]
             n = 1
-            if scale in "lx" and len(args) == 9:  # for L/X sizes
-                #len=9是避免参数没有给全时添加的False位置错误
+            #if scale in "lx" and len(args) == 9:  # for L/X sizes
+                #len=9是避免参数过少或已经给全时添加的False位置错误
                 #从而确保在参数只缺少channel_adjust时自动添加
-                args.append(False)
+                #args.append(False)
         elif m is DownsampleConv:
             c1 = ch[f]
             c2 = c1 * 2
             args = [c1]
-            if scale in "lx":  # for L/X sizes
-                args.append(False)
-                c2 =c1
+            #if scale in "lx":  # for L/X sizes
+                #args.append(False)
+                #c2 = c1
         elif m is FullPAD_Tunnel:
             c2 = ch[f[0]]
         elif m in [Multibranch]:
@@ -1181,7 +1180,8 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             PConv,
             EUCB,
             MEUM,
-            DLUPack,
+            DLU,
+            CARAFE,
         ):
             c1, c2 = ch[f], ch[f] #实际上yaml中的c1并没有被使用
             args = [c1, *args[1:]] #用c1替换args[0]是因为有缩放，二者未必相等

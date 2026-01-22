@@ -23,19 +23,19 @@ backbone: #v13 -> v3
 
 head:
   - [[7, 9, 11], 2, HyperACE, [512, 8, True, True, 0.5, 1, "both"]]
-  - [-1, 1, MEUM, []]
+  - [-1, 1, DLU, []]
   - [12, 1, DownsampleConv, []]
 
   - [[9, 12], 1, FullPAD_Tunnel, []]
   - [[7, 13], 1, FullPAD_Tunnel, []]
   - [[11, 14], 1, FullPAD_Tunnel, []]
 
-  - [-1, 1, MEUM, []]
+  - [-1, 1, DLU, []]
   - [[-1, 15], 1, Concat, [1]] #  (cat backbone P4)
   - [-1, 2, Bottleneck, [512, True]]
   - [[-1, 12], 1, FullPAD_Tunnel, []]
 
-  - [20, 1, MEUM, []]
+  - [20, 1, DLU, []]
   - [[-1, 16], 1, Concat, [1]] #  (cat backbone P3)
   - [-1, 2, Bottleneck, [256, True]]
   - [13, 1, Conv, [256, 1, 1]]

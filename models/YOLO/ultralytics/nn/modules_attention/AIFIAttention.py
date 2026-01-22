@@ -146,7 +146,6 @@ class TransformerEncoderLayer(nn.Module):
                  normalize_before=False):
         super().__init__()
         self.normalize_before = normalize_before
-
         self.self_attn = nn.MultiheadAttention(d_model, nhead, dropout, batch_first=True)
 
         self.linear1 = nn.Linear(d_model, dim_feedforward)
@@ -351,51 +350,28 @@ class HybridEncoder(nn.Module):
         return outs
 
 
-class AIFI(nn.Module):
-    """
-    Attention-based Intra-scale Feature Interaction (AIFI)
-    这是从 RT-DETR HybridEncoder 中提取的单一尺度 Transformer 模块。
-    通常用于处理主干网络的最深层特征 (S5)。
-    """
+class AIFI(TransformerEncoderLayer):
+    """Defines the AIFI transformer layer."""
 
-    def __init__(self, c1, c2=None, hidden_dim=256, nhead=8, num_layers=1, dropout=0.0):
-        """
-        Args:
-            c1 (int): 输入通道数
-            c2 (int): 输出通道数 (通常等于 hidden_dim)
-            hidden_dim (int): Transformer 内部计算的维度
-            nhead (int): 多头注意力的头数
-            num_layers (int): Transformer Encoder 的层数
-            dropout (float): Dropout 比率
-        """
-        super().__init__()
-        self.c1 = c1
-        self.c2 = c2 if c2 else c1
-        self.hidden_dim = hidden_dim
+    def __init__(self, c1, num_heads=8, cm=2048, dropout=0, act=nn.GELU(), normalize_before=False):
+        """Initialize the AIFI instance with specified parameters."""
+        super().__init__(c1, num_heads, cm, dropout, act, normalize_before)
 
-        # 1. 通道投影: 将输入通道 c1 映射到 hidden_dim
-        self.proj = nn.Sequential(
-            nn.Conv2d(c1, hidden_dim, kernel_size=1, bias=False),
-            nn.BatchNorm2d(hidden_dim)
-        )
-
-        # 2. 构建 Transformer Encoder
-        encoder_layer = TransformerEncoderLayer(
-            hidden_dim,
-            nhead=nhead,
-            dim_feedforward=hidden_dim * 4,  # RT-DETR 默认为 1024 (approx 4*256)
-            dropout=dropout,
-            activation='gelu'
-        )
-        self.encoder = TransformerEncoder(encoder_layer, num_layers)
+    def forward(self, x):
+        """Forward pass for the AIFI transformer layer."""
+        c, h, w = x.shape[1:]
+        pos_embed = self.build_2d_sincos_position_embedding(w, h, c).to(x)
+        # Flatten [B, C, H, W] to [B, HxW, C]
+        x = super().forward(x.flatten(2).permute(0, 2, 1), pos_embed=pos_embed)
+        return x.permute(0, 2, 1).view([-1, c, h, w]).contiguous()
 
     @staticmethod
-    def build_2d_sincos_position_embedding(w, h, embed_dim=256, temperature=10000.):
-        """生成 2D 正弦余弦位置编码"""
+    def build_2d_sincos_position_embedding(w, h, embed_dim=256, temperature=10000.0):
+        """Builds 2D sine-cosine position embedding."""
         grid_w = torch.arange(int(w), dtype=torch.float32)
         grid_h = torch.arange(int(h), dtype=torch.float32)
         grid_w, grid_h = torch.meshgrid(grid_w, grid_h, indexing='ij')
-        assert embed_dim % 4 == 0, 'Embed dimension must be divisible by 4'
+        assert embed_dim % 4 == 0, 'Embed dimension must be divisible by 4 for 2D sin-cos position embedding'
         pos_dim = embed_dim // 4
         omega = torch.arange(pos_dim, dtype=torch.float32) / pos_dim
         omega = 1. / (temperature ** omega)
@@ -403,29 +379,4 @@ class AIFI(nn.Module):
         out_w = grid_w.flatten()[..., None] @ omega[None]
         out_h = grid_h.flatten()[..., None] @ omega[None]
 
-        return torch.concat([out_w.sin(), out_w.cos(), out_h.sin(), out_h.cos()], dim=1)[None, :, :]
-
-    def forward(self, x):
-        # x shape: [B, C, H, W]
-        B, _, H, W = x.shape
-
-        # 1. Projection: [B, C, H, W] -> [B, hidden_dim, H, W]
-        feat = self.proj(x)
-
-        # 2. Flatten: [B, hidden_dim, H, W] -> [B, H*W, hidden_dim]
-        # 注意：PyTorch MultiheadAttention 默认 batch_first=True, 需要 [B, Seq, Dim]
-        src_flatten = feat.flatten(2).permute(0, 2, 1)
-
-        # 3. 生成位置编码 (动态生成，适应不同分辨率)
-        pos_embed = self.build_2d_sincos_position_embedding(
-            W, H, self.hidden_dim
-        ).to(src_flatten.device)
-
-        # 4. Transformer Encoding
-        memory = self.encoder(src_flatten, pos_embed=pos_embed)
-
-        # 5. Reshape back: [B, H*W, hidden_dim] -> [B, hidden_dim, H, W]
-        out = memory.permute(0, 2, 1).reshape(B, self.hidden_dim, H, W).contiguous()
-
-        return out
-
+        return torch.cat([torch.sin(out_w), torch.cos(out_w), torch.sin(out_h), torch.cos(out_h)], 1)[None]

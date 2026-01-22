@@ -4,7 +4,7 @@ from torch.nn import functional as F
 
 
 class ConvBNReLU(nn.Module):
-    '''Module for the Conv-BN-ReLU tuple.'''
+    """Module for the Conv-BN-ReLU tuple."""
     def __init__(self, c_in, c_out, kernel_size, stride, padding, dilation,
                  use_relu=True):
         super(ConvBNReLU, self).__init__()
@@ -25,7 +25,7 @@ class ConvBNReLU(nn.Module):
         return x
 
 
-class CARAFE(nn.Module):
+class CARAFE_XiaLiPKU(nn.Module):
     def __init__(self, c, c_mid=64, scale=2, k_up=5, k_enc=3):
         """ The unofficial implementation of the CARAFE module.
 
@@ -41,19 +41,16 @@ class CARAFE(nn.Module):
         Returns:
             X: The upsampled feature map.
         """
-        super(CARAFE, self).__init__()
+        super().__init__()
         self.scale = scale
 
-        self.comp = ConvBNReLU(c, c_mid, kernel_size=1, stride=1, 
-                               padding=0, dilation=1)
-        self.enc = ConvBNReLU(c_mid, (scale*k_up)**2, kernel_size=k_enc, 
-                              stride=1, padding=k_enc//2, dilation=1, 
-                              use_relu=False)
+        self.comp = ConvBNReLU(c, c_mid, kernel_size=1, stride=1,  padding=0, dilation=1)
+        self.enc = ConvBNReLU(c_mid, (scale*k_up)**2, kernel_size=k_enc,  stride=1, padding=k_enc//2,
+                              dilation=1,  use_relu=False)
         self.pix_shf = nn.PixelShuffle(scale)
 
         self.upsmp = nn.Upsample(scale_factor=scale, mode='nearest')
-        self.unfold = nn.Unfold(kernel_size=k_up, dilation=scale, 
-                                padding=k_up//2*scale)
+        self.unfold = nn.Unfold(kernel_size=k_up, dilation=scale,  padding=k_up//2*scale)
 
     def forward(self, X):
         b, c, h, w = X.size()
@@ -72,8 +69,51 @@ class CARAFE(nn.Module):
         return X
 
 
+class DLU_XiaLiPKU(nn.Module):
+    def __init__(self, c, c_mid=64, scale=2, k_up=5, k_enc=3):
+        super().__init__()
+        self.scale = scale
+        self.k_up = k_up
+
+        self.comp = ConvBNReLU(c, c_mid, kernel_size=1, stride=1, padding=0, dilation=1)
+
+        #DSConv
+        self.enc_dw = nn.Conv2d(
+            c_mid, c_mid,
+            kernel_size=k_enc, stride=1, padding=k_enc // 2,
+            groups=c_mid, bias=False
+        )
+        mask_channels = (scale * k_up) ** 2
+        self.enc_pw = nn.Conv2d(
+            c_mid, mask_channels,
+            kernel_size=1, stride=1, padding=0,
+            bias=False
+        )
+
+        self.pix_shf = nn.PixelShuffle(scale)
+        self.upsample = nn.Upsample(scale_factor=scale, mode='nearest')
+        self.unfold = nn.Unfold(kernel_size=k_up, dilation=scale, padding=k_up // 2 * scale)
+
+    def forward(self, x):
+        b, c, h, w = x.size()
+        h_, w_ = h * self.scale, w * self.scale
+
+        W = self.comp(x)
+
+        W = self.enc_dw(W)
+        W = self.enc_pw(W)
+        W = self.pix_shf(W)
+        W = F.softmax(W, dim=1)
+
+        x = self.upsample(x)
+        x = self.unfold(x)
+        x = x.view(b, c, -1, h_, w_)
+
+        X_out = torch.einsum('bkhw,bckhw->bchw', [W, x])
+        return X_out
+
 if __name__ == '__main__':
     x = torch.Tensor(1, 16, 24, 24)
-    carafe = CARAFE(16)
+    carafe = DLU_XiaLiPKU(16)
     oup = carafe(x)
     print(oup.size())

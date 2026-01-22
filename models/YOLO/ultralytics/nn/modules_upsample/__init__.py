@@ -1,6 +1,6 @@
 
 from .AnyUp import AnyUp, AnyUpPack
-from .CARAFE import CARAFE_XiaLiPKU, CARAFE_simplified, CARAFEPack
+from .CARAFE import CARAFE_XiaLiPKU, CARAFE_simplified, CARAFEPack, DLU_XiaLiPKU as DLU
 from .EQSR import EQSR
 from .FGA import FGA
 from .JAFAR import JAFAR
@@ -8,7 +8,7 @@ from .SAPA import SAPA
 from .SFAU import SFAU
 
 from .CARAFEplusplus import CARAFEplusplus
-from .DLU import DLUPack
+from .DLU_official import DLUPack
 from .DySample import DySample
 from .EMCAD_decoders import EUCB
 from .FADE_H2L import FADE as FADE_H2L

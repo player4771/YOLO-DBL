@@ -10,7 +10,7 @@ from pprint import pprint
 from pathlib import Path
 
 from .dataset import YOLODataset
-from .tools import find_new_dir, WindowsRouser, time_now_str, rand_rgb, time_sync
+from .tools import find_new_dir, WindowsRouser, time_now_str, rand_rgb, time_sync, type_str
 from .coco import convert_to_coco_api, COCOEvaluator
 
 __all__ = (
@@ -116,6 +116,7 @@ class Trainer:
             'transform_train': transform_train,
             'transform_val': transform_val,
             'no_sleep': no_sleep,
+            'max_norm': 10.0,
         }
         cfg.update(kwargs)
 
@@ -204,6 +205,8 @@ class Trainer:
 
                 self.optimizer.zero_grad(set_to_none=True)
                 self.scaler.scale(losses).backward()
+                self.scaler.unscale_(self.optimizer)
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=self._cfg['max_norm'])
                 self.scaler.step(self.optimizer)
                 self.scaler.update()
 
@@ -230,19 +233,23 @@ class Trainer:
             rouser.stop()
 
     def dump_args(self, verbose=False, **kwargs):
-        cfg = self._cfg | kwargs
-        cfg['dataset_train'] = str(self.dataset_train)
-        cfg['dataset_val'] = str(self.dataset_val)
-        cfg['dataloader_train'] = str(self.train_loader)
-        cfg['dataloader_val'] = str(self.val_loader)
-        cfg["transform_train"] = str(self._cfg["transform_train"])
-        cfg["transform_val"] = str(self._cfg["transform_val"])
-        cfg['scaler'] = str(self.scaler)
-        cfg['optimizer'] = str(self.optimizer)
-        cfg['scheduler'] = str(self.scheduler)
-        cfg['early_stopper'] = str(self.early_stopper)
-        cfg['warmup_scheduler'] = str(self.warmup_scheduler)
-        cfg['evaluator'] = str(self.evaluator)
+        cfg = self._cfg | {
+            'dataset_train': type_str(self.dataset_train),
+            'dataset_val': type_str(self.dataset_val),
+            'dataloader_train': type_str(self.train_loader),
+            'dataloader_val': type_str(self.val_loader),
+            "transform_train": type_str(self._cfg["transform_train"]),
+            "transform_val": type_str(self._cfg["transform_val"]),
+            'scaler': type_str(self.scaler),
+            'optimizer': type_str(self.optimizer),
+            'scheduler': type_str(self.scheduler),
+            'early_stopper': type_str(self.early_stopper),
+            'warmup_scheduler': type_str(self.warmup_scheduler),
+            'evaluator': type_str(self.evaluator),
+
+        }
+
+        cfg.update(kwargs)
 
         if verbose:
             pprint(cfg, indent=2)
@@ -304,14 +311,18 @@ def default_detect(
         images = [Path(input_)]
     else:
         images = [p for p in Path(input_).iterdir() if p.suffix.lower() in ['.jpg', '.png', '.jpeg']]
+    output_dir = None
+    if project is not None:
+        output_dir = find_new_dir(Path(project, name))
+        output_dir.mkdir(parents=True, exist_ok=True)
     if device is None:
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = model.to(device).eval()
 
-    total_time = 0.0
+    times = []
     print(f"Found {len(images)} images to process.")
-    for img in images:
-        img = cv2.imread(str(img), cv2.IMREAD_COLOR)
+    for image in images:
+        img = cv2.imread(str(image), cv2.IMREAD_COLOR)
         h, w, _ = img.shape
 
         start_time = time_sync()
@@ -338,12 +349,14 @@ def default_detect(
                 cv2.putText(img, text, (x_min, y_min - 5), cv2.FONT_HERSHEY_SIMPLEX,
                             0.5, (255, 255, 255), 1, cv2.LINE_AA)  # AA=抗锯齿，使字体圆滑
 
-        total_time += (time_sync() - start_time)
-        if project:
-            output_dir = find_new_dir(Path(project,name))
-            output_dir.mkdir(parents=True, exist_ok=True)
-            output = output_dir/Path(input_).name
+        times.append(time_sync() - start_time)
+        if output_dir is not None:
+            output = output_dir/Path(image).name
             cv2.imwrite(str(output), img)
             print(f"Saved result to {output}")
 
-    print(f"\nDetection finished. Average time: {total_time/len(images):.4f}")
+    if len(times) > 2:
+        times.remove(max(times))
+        times.remove(min(times))
+    avg_time = sum(times) / len(times)
+    print(f"\nDetection finished. Average time: {avg_time:.4f}")

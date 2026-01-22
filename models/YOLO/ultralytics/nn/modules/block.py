@@ -1827,7 +1827,7 @@ class FuseModule(nn.Module):
             #而HyperACE的源码中c_in=c1(输入通道数)，所以c1+c2+c3需要等于HyperACE的in_channels*4
             #YOLO的配置中c1是由上一层的输出自动填充的，所以c1+c2+c3=上一层的out_channels*4
             self.conv_out = Conv(4 * c_in, c_in, 1)
-        else:
+        else: #解决达到通道数上限导致的比例变化问题
             self.conv_out = Conv(3 * c_in, c_in, 1)
 
     def forward(self, x):

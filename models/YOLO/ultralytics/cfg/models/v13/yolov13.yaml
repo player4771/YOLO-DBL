@@ -1,10 +1,10 @@
 nc: 80 # number of classes
 scales: # model compound scaling constants, i.e. 'model=yolov13n.yaml' will call yolov13.yaml with scale 'n'
   # [depth, width, max_channels]
-  n: [0.50, 0.25, 1024]   # Nano
-  s: [0.50, 0.50, 1024]   # Small
-  l: [1.00, 1.00, 512]    # Large
-  x: [1.00, 1.50, 512]    # Extra Large
+  n: [0.50, 0.25, 65536]   # Nano
+  s: [0.50, 0.50, 65536]   # Small
+  l: [1.00, 1.00, 65536]    # Large
+  x: [1.00, 1.50, 65536]    # Extra Large
 
 backbone: #假设输入尺寸为640x640
   # [from, repeats, module, args]

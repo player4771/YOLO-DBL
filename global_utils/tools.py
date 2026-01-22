@@ -11,7 +11,7 @@ __all__ = (
     'find_new_dir',
     'WindowsRouser',
     'time_now_str',
-    'typename',
+    'type_str',
     'avg_time',
     'check_time',
     'rand_rgb',
@@ -92,12 +92,20 @@ def time_now_str(sep_date='/', sep_time=':', sep_datetime=' ') -> str:
     :param sep_datetime: 日期与时间之间的间隔符
     :return: 格式化的日期时间字符串
     """
-    format_ = f'%Y{sep_date}%m{sep_time}%d{sep_datetime}%H{sep_time}%M{sep_time}%S' #有点抽象...
+    format_ = f'%Y{sep_date}%m{sep_date}%d{sep_datetime}%H{sep_time}%M{sep_time}%S' #有点抽象...
     return time.strftime(format_, time.localtime())
 
-def typename(class_):
-    #如: <class 'ultralytics.nn.modules_attention.BiFormer.biformer.BiFormer'> -> BiFormer
-    return re.search(r"<class '.*\.(.*)'>", str(type(class_))).group(1)
+def type_str(*classes) -> str|list[str]|None:
+    """
+    传入一个值时，返回一个字符串; 传入多个时，返回字符串列表.\n
+    如: <class 'ultralytics.nn.modules.conv.Conv'> -> ultralytics.nn.modules.conv.Conv
+    """
+    if len(classes) == 1:
+        return str(type(classes[0]))[8:-2]
+    elif len(classes) > 1:
+        return [str(type(c))[8:-2] for c in classes]
+    else:
+        return None
 
 def avg_time(module, *args, repeat=10):
     result = module(*args)  # 运行一下，忽略编译时间
@@ -110,7 +118,7 @@ def avg_time(module, *args, repeat=10):
     return total_time, result
 
 def check_time(module, *args, repeat=10, log=True, adjust=25):
-    print(f"{typename(module)}:".ljust(adjust), end='')
+    print(f"{module.__name__}:".ljust(adjust), end='')
     total_time, result = avg_time(module, *args, repeat=repeat)
     if log:
         try:

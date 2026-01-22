@@ -8,7 +8,7 @@ from ..modules import CBAM
 
 
 class CARAFE(nn.Module):
-    def __init__(self, c1, c2, kernel_size=3, up_factor=2):
+    def __init__(self, c1, c2:int=None, kernel_size=3, up_factor=2):
         """
         :param c1: 输入通道数
         :param c2: 输出通道数，一般与c1相同
@@ -22,7 +22,7 @@ class CARAFE(nn.Module):
         self.encoder = nn.Conv2d(c1 // 4,
                                  self.up_factor ** 2 * self.kernel_size ** 2,  # 指数优先级最高
                                  self.kernel_size, 1, self.kernel_size // 2)  # 256 36
-        self.out = nn.Conv2d(c1, c2, 1)  # 1024 1024
+        self.out = nn.Conv2d(c1, c2 if c2 is not None else c1, 1)  # 1024 1024
 
     def forward(self, x):
         N, C, H, W = x.size()  # 8 1024 20 20

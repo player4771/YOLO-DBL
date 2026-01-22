@@ -1,3 +1,4 @@
+#仅做展示，无法运行
 # parameters
 nc: 80  # number of classes
 depth_multiple: 1.0  # model depth multiple

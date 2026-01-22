@@ -9,8 +9,12 @@ torch.backends.cudnn.allow_tf32 = True
 torch.backends.cuda.matmul.allow_tf32 = True
 from torchvision.models.detection.anchor_utils import DefaultBoxGenerator
 
+#import sys
+#sys.path.append('/root/project/Paper2/')
+
 from backbone import ResNetBackbone
 from global_utils import ATransforms, Trainer, default_val, default_detect
+
 
 def create_model(backbone:str='vgg16', num_classes:int=4, weights:str=None): # -> model
     if backbone == "vgg16":
@@ -61,19 +65,19 @@ def create_model(backbone:str='vgg16', num_classes:int=4, weights:str=None): # -
 def train(**kwargs):
     cfg = { #default args
         'backbone':'vgg16',
-        'data':None, #不可缺省
+        'data':"E:/Projects/Datasets/tea_leaf_diseases/data_abs.yaml",
         'dataset': {}, #避免类型检查警告
         'project':'./runs',
         'name':'train',
-        'epochs':20,
+        'epochs':100,
         'lr':1e-2,
         'lf':1e-2,
-        'batch':8,
-        'workers':8,
+        'batch':4,
+        'workers':4,
         'weight_decay':1e-5,
-        'patience':5,
+        'patience':10,
         'device': 'cuda' if torch.cuda.is_available() else 'cpu',
-        'warmup': 0,
+        'warmup': 3,
         'img_size': 640,
     }
     cfg.update(kwargs)
@@ -112,14 +116,6 @@ def detect():
 
 
 if __name__ == '__main__':
-    train(
-        backbone='vgg16',
-        data="E:/Projects/Datasets/tea_leaf_diseases/data_abs.yaml",
-        project="./runs",
-        epochs=100,
-        patience=10,
-        lr=1e-2,
-        warmup=3,
-        batch=4,
-        workers=4
-    )
+    train()
+    #val()
+    #detect()

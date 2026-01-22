@@ -41,38 +41,12 @@ class ATransforms:
 
     def __call__(self, image, bboxes=None, class_labels=None):
         """image: torch.Tensor, format:CHW"""
-        if bboxes:
-            image = image.permute(1,2,0).numpy() # CHW -> HWC
+        if bboxes is not None: #if []会判定为False
+            image = image.permute(1, 2, 0).numpy()  # CHW -> HWC
             transformed = self.transform(image=image, bboxes=bboxes, class_labels=class_labels)
             return transformed
         else:
             return self.apply_image(image)
-
-
-def transform_visualization(image_file, sequence=False):
-    """
-    :param image_file: Image Path
-    :param sequence: each augment for one image, or apply all
-    :return: Processed image
-    """
-    import cv2
-    image = cv2.imread(image_file, cv2.IMREAD_COLOR)
-    transforms=[
-        A.HueSaturationValue(0.015*180, 0.7*255, 0.4*255, p=1),
-        A.RandomScale(0.9, p=1),
-        A.ChannelShuffle(p=1),
-        A.CoarseDropout(p=1),
-    ]
-    results = []
-    for transform in transforms:
-        if sequence:
-            image = transform(image=image)['image']
-            results.append(image)
-        else:
-            results.append(transform(image=image)['image'])
-    for i, img in enumerate(results):
-        cv2.imwrite(f"./cache/transform{i+1}.png", img)
-    return results
 
 def image_split(image_file, x, y):
     import cv2
@@ -83,7 +57,7 @@ def image_split(image_file, x, y):
         cv2.imwrite(f"./cache/split{i+1}.png", img)
 
 
-def transform_visualization2(image_path:str):
+def transform_visualization(image_path:str):
     import cv2
     import numpy as np
     img = cv2.imread(image_path, cv2.IMREAD_COLOR)
@@ -155,7 +129,7 @@ def display_images(img_file:list[str]|str, titles:list[str]=None, rows:int=None,
         ax.axis('off')
         img = plt.imread(files[i])
         ax.imshow(img)
-        ax.set_title(titles[i] if titles else f"Image{i}")
+        ax.set_title(titles[i] if titles else f"Image{i}", fontdict={'size': 18})
 
     plt.tight_layout()
     plt.savefig("./cache/augment.png", transparent=True)
@@ -163,6 +137,8 @@ def display_images(img_file:list[str]|str, titles:list[str]=None, rows:int=None,
 
 if __name__ == '__main__':
     img_raw = r"E:\Projects\Datasets\example\healthy.jpg"
-    outfiles = transform_visualization2(img_raw)
-    outfiles.insert(0, img_raw)
+    #outfiles = transform_visualization(img_raw)
+    #outfiles.insert(0, img_raw)
+    outfiles = [rf"E:\Projects\PyCharm\Paper2\global_utils\cache\transform{i}.png" for i in range(1, 8)]
+    outfiles.append(img_raw)
     display_images(outfiles, ['Original', 'Mosaic', 'HSV', 'Scale', 'Erasing', 'Mixup', 'Copy-Paste', 'Flip'], 2, 4)

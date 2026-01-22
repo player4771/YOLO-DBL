@@ -12,4 +12,4 @@ from .MyStructures import ExtractLayer
 from .RepGhost import RepGhostBottleneck
 from .RepViT import RepViTBlock
 from .ScConv import ScConv
-from .SwinTransformer import PatchEmbed, SwinStage, PatchMerging
+from .Swin_Transformer import PatchEmbed, SwinStage, PatchMerging

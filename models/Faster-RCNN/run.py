@@ -6,6 +6,9 @@ torch.hub.set_dir('./') #修改缓存路径
 torch.backends.cudnn.benchmark = True
 torch.backends.cuda.matmul.allow_tf32 = True
 
+import sys
+sys.path.append('/root/project/Paper2/')
+
 from global_utils import Trainer, ATransforms, default_val, default_detect
 
 
